@@ -1,11 +1,15 @@
 # DNAStream: A multisample, multiplatform DNA sequencing HDF5 data structure for integrated downstream evolutionary analsysis 
 
+See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.github.mdanderson.org/llweber/DNAStream/) for the API.
+
 ## Dependencies
  - `h5py`
  - `numpy`
  - `pandas`
 
-## Hierarchy
+
+
+<!-- ## Hierarchy
  ├── SNV/                     # Shared SNV index
  │   ├── labels               #short name chr:pos:ref:alt
      |-- data                 #dataframe structure containing quality scores, number of callers, etc
@@ -26,4 +30,4 @@
  │   │   ├── total_reads         
  ├── metadata/                   # Metadata storage
  │   ├── sample_info              # Sample IDs
- │   ├── processing_parameters
+ │   ├── processing_parameters -->
