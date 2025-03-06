@@ -1,0 +1,19 @@
+site_name: DNAStream Documentation
+repo_url: https://github.mdanderson.org/llweber/DNAStream
+theme:
+  name: material
+
+nav:
+  - Home: index.md
+  - API Reference:
+      - DNAStream: api/dnastream.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          selection:
+            docstring_style: numpy
+          rendering:
+            show_source: false
