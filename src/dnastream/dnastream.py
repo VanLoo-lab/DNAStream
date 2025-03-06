@@ -1150,17 +1150,17 @@ class DNAStream:
 
 ############ TEST ###################
 
-rc_pth = "/rsrch6/home/genetics/vanloolab/llweber/MPNST/scdna/read_counts"
-ds = DNAStream(filename="temp.h5", verbose=True)
-print(ds)
-samples = [f"GEM2.2_PT_{i}" for i in range(2,6)] 
-maf_files = [f"../data_summary/WGS_MUTATION/Somatic/2outof3_SNV/{sample}_SNVs_2outof3.maf" for sample in samples]
-indices = ds.add_maf_files(maf_files)
-print(ds.get_snv_log())
-print(ds)
-read_count_file = f"{rc_pth}/GEM2.2.csv"
-ds.add_read_counts(read_count_file, source="scdna")
-print(ds.get_snv_log())
-print(ds.get_sample_log())
-print(ds)
-ds.close()
+# rc_pth = "/rsrch6/home/genetics/vanloolab/llweber/MPNST/scdna/read_counts"
+# ds = DNAStream(filename="temp.h5", verbose=True)
+# print(ds)
+# samples = [f"GEM2.2_PT_{i}" for i in range(2,6)] 
+# maf_files = [f"../data_summary/WGS_MUTATION/Somatic/2outof3_SNV/{sample}_SNVs_2outof3.maf" for sample in samples]
+# indices = ds.add_maf_files(maf_files)
+# print(ds.get_snv_log())
+# print(ds)
+# read_count_file = f"{rc_pth}/GEM2.2.csv"
+# ds.add_read_counts(read_count_file, source="scdna")
+# print(ds.get_snv_log())
+# print(ds.get_sample_log())
+# print(ds)
+# ds.close()
