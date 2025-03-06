@@ -9,9 +9,12 @@ nav:
       - DNAStream: api/dnastream.md
 
 plugins:
+  - search
   - mkdocstrings:
-      default_handler: python
-extra:
-  mkdocstrings:
-    python:
-      paths: ["src"] 
+      handlers:
+        python:
+          inventories: []  # Fix warning by replacing 'import' with 'inventories'
+          paths: ["src"]
+          options:
+            docstring_style: numpy
+            show_source: false

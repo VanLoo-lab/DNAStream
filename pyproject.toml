@@ -19,8 +19,7 @@ dependencies = [
 Homepage = "https://github.mdanderson.org/llweber/DNAStream"
 Repository = "https://github.mdanderson.org/llweber/DNAStream"
 
-[tool.setuptools]
-packages = ["dnastream"]
 
-[tool.setuptools.package-dir]
-dnastream = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
