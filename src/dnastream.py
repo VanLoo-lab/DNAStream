@@ -13,7 +13,6 @@ import json
 
 #TODO
 # - create mkdocs
-# - create github repo
 # - add pyclone addition
 # - add bulk phylogenies as edge lists
 
