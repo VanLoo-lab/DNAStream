@@ -11,8 +11,9 @@ import h5py
 import numpy as np
 import json 
 
+from .schema import SCEHMA, STRUCT_ARRAYS, META_TABLES, MODALITIES, READ_COUNTS
+from .datatypes import EDGE_LIST_DTYPE 
 #TODO
-# - create mkdocs
 # - add pyclone addition
 # - add bulk phylogenies as edge lists
 
@@ -30,7 +31,7 @@ import json
      |── cluster
      |── index_map
      |-- log
- ├── read_counts/               # Read count matrices
+ ├── edge_list/               # Read count matrices
  │   ├── bulk/                  # Bulk sequencing read counts
  │   │   ├── variant       # SNVs x Samples (variant read counts)
  │   │   ├── total         # SNVs x Samples (total read counts)
@@ -39,8 +40,42 @@ import json
  │   │   ├── total         
  │   ├── scdna/                  # scDNA-seq read counts
  │   │   ├── variant       
- │   │   ├── total         
- ├── metadata/                   # Metadata storage
+ │   │   ├── total 
+ |-- trees/
+ |   |-- SNV_trees/   #edge lists of clusters
+ |   |     |- trees
+ |   |     |- data      #holds the likelihood, rank, method used to generate, etc
+ |   |     |- index_map  #hold the index map
+ |   |-- CNA_trees     # cell lineage trees   #newick strings
+ |   |     |- trees
+ |   |     |- data      #holds the likelihood, rank, method used to generate, etc
+ |   |     |- index_map
+ |   |-- clonal_trees (joint CNA SNV tree)/
+ |   |     |-- tree (edge list)
+ |   |     |-- genotypes  (structured array of node/snv/x/y/x_bar/y_bar)
+ |   |     |-- clonal proportions (U)
+ |   |     |-- sample assignment 
+ |   |    
+ |-- copy_number/
+ |   ├── /bulk/
+ |   │   ├── /segments    # Bulk-specific segment index
+ |   │   ├── /profiles       # Tensor: (sample, segment, allele CN, proportion μ)
+ |   │   ├── /metadata    # Bulk-specific metadata
+ |   |   |-- /log          # logging
+ |   │
+ |   ├── /single_cell/
+ |   │   ├── /segments    # Single-cell segment index
+ |   │   ├── /profiles       # (sample, segment) → allele CN tuple
+ |   │   ├── /metadata    # Single-cell metadata
+ |   │
+ |   ├── /lcm/
+ |   │   ├── /segments    # LCM-specific segment index
+ |   │   ├── /profiles       # (sample, segment) → allele CN tuple
+ |   |   |--/logR
+ |   |   |--/baf
+ |   │   ├── /metadata    # LCM-specific metadata
+ ├── metadata/ 
+     |-- log                  # Metadata storage
  │   ├── sample_info              # Sample IDs
  │   ├── processing_parameters
 """
@@ -109,7 +144,7 @@ class DNAStream:
     -------
     __init__(filename, verbose=False, snv_dtype, sample_dtype)
         Initializes the HDF5 storage and creates necessary datasets if they do not exist.
-    add_read_counts(fname, source, location=None)
+    add_edge_list(fname, source, location=None)
         Adds read count data from a file and updates the corresponding datasets.
     add_maf_file(fname, missing_values, required_cols)
         Adds SNV information from a Mutation Annotation Format (MAF) file.
@@ -139,95 +174,39 @@ class DNAStream:
 
     SNV = "SNV"
     SAMPLE = "sample"
-
-    META_TABLES = ["data", "label", "cluster", "index_map", "log"]
+    TREE = "Trees"
+    CNA = "CNA"
+    CLONAL= "clonal"
+    
     MODALITIES = [BULK, LCM, SCDNA]
     INDICES = [SNV, SAMPLE]
+    TREES = [SNV, CNA, CLONAL ]
 
-    def __init__(self, filename, verbose=False, 
-            snv_dtype = np.dtype([
-                    ("label", h5py.string_dtype(encoding="utf-8")),
-                    ("chrom", "S5"),  # Fixed-length string (5 characters max)
-                    ("pos", "i8"), 
-                    ("end_pos", "i8"),    # Integer
-                    ("ref_allele", "S1"),  # Single-character string
-                    ("alt_allele", "S1"),  # Single-character string
-                    ("hugo", "S15"), # Fixed-length string (15 characters max)
-                    ("gene", "S10"), #Fixed-length string (10 characters ma)       
-             ]),
-            sample_dtype = np.dtype([
-                    ("label", h5py.string_dtype(encoding="utf-8")),  #sample description
-                    ("patient", "S10"),  # Fixed-length string (10 characters max)
-                    ("source", "S10"),  # Fixed-length string (10 characters max)
-                    ("location", "S15") , # Fixed-length string (15 characters max)
-                    ("bam_file", h5py.string_dtype(encoding="utf-8")),  # Single-character string
+    def __init__(self, filename, verbose=False):
 
-            ])
-    ):
         """Initialize HDF5 storage."""
         self.filename = filename
         self.verbose = verbose
 
     
 
-        log_dtype = np.dtype([
-            ("timestamp", h5py.string_dtype(encoding="utf-8")),
-            ("number", "i8"),
-            ("index_size_before", "i8"),
-            ("index_size_after", "i8"),
-            ("operation", "S15"),
-            ("user", "S15"),
-            ("hostname", "S15"),
-            ("file",  h5py.string_dtype(encoding="utf-8"))
-        ])
-
-        
-
-
         self.file = h5py.File(filename, "a")  # Append mode (does not overwrite)
-        
 
-        # snv_grp = self.self.h5file.create_group(SNV)
-        # snv_grp = snv_grp.attrs['label'] = np.array(shape=0, dtype=str)
-        # snv_grp = snv_grp.attrs['cluster']= np.array(shape=0, dtype=np.int32)
+        self._recursive_build(SCEHMA)
 
-        self.schema = {DNAStream.SNV: 
-                {"label" :  h5py.string_dtype(encoding="utf-8"),
-                "cluster" : "i8",
-                "data" : snv_dtype,
-                "index_map": h5py.string_dtype("utf-8"),
-                "log" : log_dtype,
-                },
-            DNAStream.SAMPLE : 
-                {
-                "label":    h5py.string_dtype(encoding="utf-8") ,
-                "cluster" : "i8",
-                "data" : sample_dtype,
-                "index_map":    h5py.string_dtype("utf-8"),
-                "log" : log_dtype
-                }
-        }
 
-        # Create shared SNV index if not already present
-        for index in DNAStream.INDICES:
-            for data in DNAStream.META_TABLES:
-                if f"{index}/{data}" not in self.file:
-                    self.file.create_dataset(f"{index}/{data}", shape=(0,), maxshape=(None,), 
-                                        dtype=self.schema[index][data], compression="gzip")
-                    if data in ["data", "log"]:   
-                        self.file[f"{index}/{data}"].attrs['columns'] = list(self.schema[index][data].names)
 
-        # Create group structure
-        for modality in DNAStream.MODALITIES:
-                group_path = f"read_counts/{modality}"
-                if group_path not in self.file:
-                    self.file.create_group(group_path)
-                for reads in ["variant", "total"]:
-                    if f"{group_path}/{reads}" not in self.file:
-                        self.file.create_dataset(f"{group_path}/{reads}", shape=(0,0), maxshape=(None,None), dtype='i', 
+        # Create group structure for read counts
+        for key, dtype in READ_COUNTS.items():
+                    self.add_dataset_to_file(key, shape=(0,0), maxshape=(None,None), dtype=dtype, 
                                                  compression="gzip", chunks=(1, 5000))
-                        self.file[f"{group_path}/{reads}"].dims[0].label = DNAStream.SNV
-                        self.file[f"{group_path}/{reads}"].dims[1].label = DNAStream.SAMPLE
+                    self.file[key].dims[0].label = DNAStream.SNV
+                    self.file[key].dims[1].label = DNAStream.SAMPLE
+                    
+                    # if f"{group_path}/{reads}" not in self.file:
+                    #     self.file.create_dataset(f"{group_path}/{reads}", shape=(0,0), maxshape=(None,None), dtype='i', 
+                    #                              compression="gzip", chunks=(1, 5000))
+                      
 
 
         
@@ -242,6 +221,100 @@ class DNAStream:
         return mystr
     
 
+    def _recursive_build(self, schema, path=""):
+        """
+        Recursively traverse the schema dictionary and create datasets in the HDF5 file.
+
+        Parameters
+        ----------
+        schema : dict
+            The nested schema dictionary defining the dataset structure.
+        path : str, optional
+            The current path in the HDF5 hierarchy, used for recursive traversal.
+        """
+        if isinstance(schema, dict):  
+            for key, datasets in schema.items():
+                new_path = f"{path}/{key}" if path else key  # Handle root case
+                
+                if isinstance(datasets, dict):  # If it's another dictionary, recurse
+                    self._recursive_build(datasets, new_path)
+                else:  # If it's a dataset, create it
+                    dtype = datasets  # Since `datasets` holds dtype here
+                    
+                    columns = []
+                    if key in STRUCT_ARRAYS:
+                        columns = list(dtype.names)  # Get column names from dtype
+                    
+                 
+                    self.add_dataset_to_file(
+                        new_path, shape=(0,), maxshape=(None,),
+                        dtype=dtype, compression="gzip",
+                        columns=columns
+                    )
+
+    
+
+    def add_dataset_to_file(self, path,  
+                             dtype=h5py.string_dtype("utf-8"), 
+                             columns=[], 
+                             source_file="",
+                             **kwargs):
+        """
+        Internal function as wrapper to create a new dataset for the file
+
+        Parameters
+        ----------
+
+        path : str
+            path to where dataset should be added 
+        dtype : numpy.dtype
+            the simple or complex datatype of the dataset
+        
+        """
+        if path not in self.file:
+            if self.verbose:
+                print(f"Creating dataset {path}...")
+            self.file.create_dataset(path, dtype=dtype, **kwargs) 
+            if columns:
+                self.file[path].attrs['columns'] = columns
+            self._log_dataset_modification(path, operation="create", source_file=source_file)
+        else:
+            print("Warning! Dataset exists at specified path and will not be overwritten.")
+
+    
+    def _log_dataset_modification(self, dataset_name, operation, source_file=""):
+        """
+        Logs modifications to any dataset within the HDF5 file.
+
+        Parameters
+        ----------
+        dataset_name : str
+            Path to the dataset that was modified.
+        operation : str
+            The operation performed (e.g., "add", "update", "delete", "create").
+        source_file : str, optional
+            The source file that triggered the modification.
+
+        Notes
+        -----
+        - Logs include timestamps, affected dataset, user info, and modification details.
+        - Uses a dynamically growing dataset in HDF5.
+        """
+        log = self.file["metadata/log"]
+        current_size = log.shape[0]
+        new_size = current_size + 1
+        log.resize((new_size,))
+
+        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S").encode("utf-8")
+        user = getpass.getuser().encode("utf-8")
+        hostname = socket.gethostname().encode("utf-8")
+        source_file = str(pathlib.Path(source_file).resolve()).encode("utf-8")
+
+        # Store modification log
+        log[current_size] = (
+            timestamp_str, dataset_name.encode("utf-8"), operation.encode("utf-8"),
+            user, hostname, source_file
+        )
 
     @timeit
     def add_read_counts(self, fname, source, location=None):
@@ -317,6 +390,10 @@ class DNAStream:
                 mask = snv_indices_arr == snv  # Select all entries for this snv index
                 dat["variant"][snv, sample_indices_arr[mask]] = var_counts[mask]
                 dat["total"][snv, sample_indices_arr[mask]] = total_counts[mask]
+            
+            for arr in ["variant", "total"]:
+                self._log_dataset_modification(f"read_counts/{source}/{arr}", operation="update", source_file=fname)
+
 
 
 
@@ -324,6 +401,9 @@ class DNAStream:
         except Exception as e:
             self.close()
             raise Exception(e)
+
+
+
 
 
         
@@ -457,7 +537,7 @@ class DNAStream:
         """
 
         if m:
-            for snv_data in DNAStream.META_TABLES:
+            for snv_data in META_TABLES:
                 if snv_data == "log":
                     continue
                 group_path = f"{DNAStream.SNV}/{snv_data}"
@@ -467,7 +547,7 @@ class DNAStream:
             m= self.file[f"{DNAStream.SNV}/label"].shape[0]
 
         if n:
-            for sample_data in DNAStream.META_TABLES:
+            for sample_data in META_TABLES:
                 if sample_data == "log":
                     continue
                 group_path = f"{DNAStream.SAMPLE}/{sample_data}"
@@ -476,7 +556,7 @@ class DNAStream:
             n = self.file[f"{DNAStream.SAMPLE}/label"].shape[0]
 
 
-        for modality in DNAStream.MODALITIES:
+        for modality in MODALITIES:
             group_path = f"read_counts/{modality}"
             for reads in ["variant", "total"]:
                 
@@ -843,6 +923,16 @@ class DNAStream:
         """
         return self._get_data(dataset_name=f"{DNAStream.SAMPLE}/log")
 
+    def get_dataset_log(self):
+        """
+        Retrieve the dataset log
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame containing log entries for SNV updates.
+        """
+        return self._get_data(dataset_name=f"metadata/log")
 
     def get_sample_data(self, indices=None):
         """
@@ -900,7 +990,7 @@ class DNAStream:
         return df
 
 
-    def add_snv_data(self, indices, df):
+    def add_snv_data(self, indices, df, source_file=""):
         """
         Add or update SNV data in the HDF5 file.
 
@@ -921,10 +1011,10 @@ class DNAStream:
         - The dataset is resized if necessary before adding data.
         - Uses structured NumPy arrays for efficient storage.
         """
-        self._add_data(indices, df, dataset_name=f"{DNAStream.SNV}/data")
+        self._add_data(indices, df, dataset_name=f"{DNAStream.SNV}/data", source_file=source_file)
 
 
-    def add_sample_data(self, indices, df):
+    def add_sample_data(self, indices, df, source_file=""):
         """
         Add or update sample data in the HDF5 file.
 
@@ -945,10 +1035,10 @@ class DNAStream:
         - The dataset is resized if necessary before adding data.
         - Uses structured NumPy arrays for efficient storage.
         """
-        self._add_data(indices, df, dataset_name=f"{DNAStream.SAMPLE}/data")
+        self._add_data(indices, df, dataset_name=f"{DNAStream.SAMPLE}/data", source_file=source_file)
 
 
-    def _add_data(self, indices, df, dataset_name):
+    def _add_data(self, indices, df, dataset_name, source_file=""):
         """
         Internal method to update structured HDF5 datasets.
 
@@ -977,7 +1067,7 @@ class DNAStream:
             self.file.close()
             raise IndexError("Invalid indices passed to add_data method, check indices and try again")
 
-        # Convert DataFrame to structured NumPy array
+        # Convert df to structured array
         structured_data = np.zeros(len(indices), dtype=dataset.dtype)
         for col in df.columns:
             structured_data[col] = df[col].to_numpy()
@@ -985,8 +1075,11 @@ class DNAStream:
         # Update data at provided indices
         dataset[indices] = structured_data
 
+        #log modifications 
+        self._log_dataset_modification(dataset_name, operation="update", source_file=source_file)
 
-    def _update_value(self, indices, dataset_name, col, value):
+
+    def _update_value(self, indices, dataset_name, col, value, source_file=""):
         """
         Internal method to update a single column in an HDF5 dataset.
 
@@ -1025,6 +1118,7 @@ class DNAStream:
 
         # Write back only modified rows
         dataset[indices] = temp_data
+        self._log_dataset_modification(dataset_name, operation="update", source_file=source_file)
    
 
     def add_maf_files(self, fnames, **kwargs)  :
@@ -1128,7 +1222,7 @@ class DNAStream:
                 snv_data = maf[[val for _, val in column_dict.items()]]
               
     
-                self.add_snv_data(indices, snv_data)
+                self.add_snv_data(indices, snv_data, source_file=fname)
 
 
         except Exception as e:
@@ -1136,9 +1230,76 @@ class DNAStream:
             self.close()
             raise Exception(e)
 
+    def _parse_file(fname, sep_word='tree', nskip=0, sep="\t"):
+        """
+        Parses a text file containing multiple edge lists of trees.
+        @param fname: str filename to be parsed
+        @param sep_word: str a word contained in the line separating distinct trees (default 'tree')
+        @param nksip: int number of rows to skip before parsing
+        """
+        tree_list = []
+        with open(fname, 'r+') as file:
+            new_tree = None 
+            for idx, line in enumerate(file):
+                if idx < nskip:
+                    continue
+                if sep_word in line:
+                    if new_tree:
+                        tree_list.append(new_tree)
+                    new_tree = []
 
+                else:
+                    edge =( int(e) for e in line.strip().split(sep))
+                    new_tree.append((edge[0], edge[1])) 
+            if new_tree:
+                tree_list.append(new_tree)
+   
+        return tree_list
 
+    def _add_tree(self, label, edge_list,  tree_type,data=None, index=None):
+       
+        trees = self.file[f"{DNAStream.TREE}/{tree_type}_tree"]
+        save = False
+        if index is None:
+            index = self._load_index(f"{DNAStream.TREE}/{tree_type}_tree/index_map")
+            save = True
+   
+        numtrees = len(index)
+        new_size = numtrees + 1
+
+        for key in trees:
+            if key != "index_map":
+                trees[key].resize((new_size,))
+        
+        index[label] =numtrees
+
+        if save:
+            self._save_index(index, f"{DNAStream.TREE}/{tree_type}_tree/index_map")
+       
+     
+        trees["trees"] =np.array(edge_list, dtype=EDGE_LIST_DTYPE)
+
+        if data:
+            trees["data"][numtrees] = data # a single array 
     
+    def add_trees_from_file(self, fname, tree_type="SNV", method=""):
+        
+        tree_index = self._load_index(f"{DNAStream.TREE}/{tree_type}/index_map")
+        
+        tree_list, data = self._parse_file(fname, method)
+        for i,edge_list in enumerate(tree_list):
+            label = f"tree{i}"
+            self._add_tree(label, edge_list, data[i], index=tree_index)
+        
+        self._save_index(tree_index, f"{DNAStream.TREE}/{tree_type}_tree/index_map")
+        
+        self._log_dataset_modification(f"{DNAStream.TREE}/{tree_type}_tree", operation="update", source_file=fname)
+    
+    def add_snv_tree_from_edge_list(self, edge_list, method="", likelihood=np.nan, rank=None):
+        self._add_snv_tree(edge_list)
+
+        self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
+
     def close(self):
         """
         Close the HDF5 file safely.
