@@ -62,6 +62,7 @@ dist/
 *.egg
 *.manifest
 *.spec
+*.egg-info/
 
 # HDF5 files (optional, if storing temporary large files)
 *.h5
@@ -75,6 +76,7 @@ dist/
 site/
 *.lock
 mkdocs.yml~
+build/
 
 # Ignore large temporary test files
 tests/output/
