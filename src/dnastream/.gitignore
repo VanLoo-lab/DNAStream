@@ -1,0 +1,81 @@
+# Ignore test artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pytest_cache/
+
+# Byte-compiled / cached files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+.mypy_cache/
+pip-wheel-metadata/
+*.egg-info/
+*.eggs/
+*.whl
+*.dist-info/
+
+# macOS system files
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.out
+*.bak
+*.swp
+*.swo
+*.swn
+*.tmp
+debug.log
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Editor-specific files (VSCode, PyCharm, etc.)
+.vscode/
+.idea/
+*.iml
+*.sublime-workspace
+*.sublime-project
+
+# pytest, tox, and test-related files
+.tox/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.coverage
+.coverage.*
+
+# Ignore test output artifacts
+tests/output/
+tests/temp_*
+tests/__pycache__/
+
+# Build and distribution artifacts
+build/
+dist/
+*.egg
+*.manifest
+*.spec
+
+# HDF5 files (optional, if storing temporary large files)
+*.h5
+*.hdf5
+
+# SQLite database files (if applicable)
+*.db
+*.sqlite3
+
+# MkDocs build artifacts
+site/
+*.lock
+mkdocs.yml~
+
+# Ignore large temporary test files
+tests/output/
+tests/temp_*
