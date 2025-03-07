@@ -21,7 +21,7 @@ from .datatypes import EDGE_LIST_DTYPE
 /
  ├── SNV/                     # Shared SNV index
  │   ├── labels               #short name chr:pos:ref:alt
-     |── data                 #dataframe structure containing quality scores, number of callers, etc
+     |── data                #dataframe structure containing quality scores, number of callers, etc
      |── cluster
      |── index_map             #json string for fast loading and saving
      |-- log
@@ -31,32 +31,24 @@ from .datatypes import EDGE_LIST_DTYPE
      |── cluster
      |── index_map
      |-- log
- ├── edge_list/               # Read count matrices
- │   ├── bulk/                  # Bulk sequencing read counts
- │   │   ├── variant       # SNVs x Samples (variant read counts)
- │   │   ├── total         # SNVs x Samples (total read counts)
- │   ├── lcm/                    # LCM sequencing read counts
- │   │   ├── variant       
- │   │   ├── total         
- │   ├── scdna/                  # scDNA-seq read counts
- │   │   ├── variant       
- │   │   ├── total 
  |-- trees/
- |   |-- SNV_trees/   #edge lists of clusters
- |   |     |- trees
+ |   |-- SNV_trees/  
+ |   |     |- trees      #edge lists of clusters
  |   |     |- data      #holds the likelihood, rank, method used to generate, etc
  |   |     |- index_map  #hold the index map
- |   |-- CNA_trees     # cell lineage trees   #newick strings
- |   |     |- trees
- |   |     |- data      #holds the likelihood, rank, method used to generate, etc
+ |   |-- CNA_trees     
+ |   |     |- trees      #edge lists (*) probably changed to Newick strings
+ |   |     |- data      #holds the label, likelihood, rank, method used to generate, etc
  |   |     |- index_map
  |   |-- clonal_trees (joint CNA SNV tree)/
- |   |     |-- tree (edge list)
- |   |     |-- genotypes  (structured array of node/snv/x/y/x_bar/y_bar)
- |   |     |-- clonal proportions (U)
- |   |     |-- sample assignment 
+ |   |     |-- tree 
+ |   |     |-- data      #holds the likelihood, rank, method used to generate, etc
+ |   |     |-- index_map
+ |   |     |-- genotypes (*) (structured array of node/snv/x/y/x_bar/y_bar)
+ |   |     |-- clonal proportions (*) (U)
+ |   |     |-- sample assignment (*)
  |   |    
- |-- copy_number/
+ |-- copy_number/ (*)
  |   ├── /bulk/
  |   │   ├── /segments    # Bulk-specific segment index
  |   │   ├── /profiles       # Tensor: (sample, segment, allele CN, proportion μ)
@@ -76,8 +68,8 @@ from .datatypes import EDGE_LIST_DTYPE
  |   │   ├── /metadata    # LCM-specific metadata
  ├── metadata/ 
      |-- log                  # Metadata storage
- │   ├── sample_info              # Sample IDs
- │   ├── processing_parameters
+ │   ├── sample_info  (*)            # Sample IDs
+ │   ├── processing_parameters (*)
 """
 
 
@@ -105,29 +97,7 @@ class DNAStream:
     from bulk, LCM, and single-cell sequencing. The design ensures consistency across 
     different data modalities and enables efficient querying and updating.
 
-    Class Attributes
-    ----------------
-    BULK : str
-        Label for bulk sequencing data ("bulk").
-    LCM : str
-        Label for laser capture microdissection (LCM) sequencing data ("lcm").
-    SCDNA : str
-        Label for single-cell DNA sequencing data ("scdna").
-    SNV : str
-        Label for the SNV (single-nucleotide variant) index ("SNV").
-    SAMPLE : str
-        Label for the sample index ("sample").
-    META_TABLES : list
-        List of metadata tables stored within each index. Includes:
-        - "data" : Contains structured SNV/sample metadata.
-        - "label" : Stores unique labels for SNVs and samples.
-        - "cluster" : Stores cluster assignments for SNVs or samples.
-        - "index_map" : Maps SNV/sample labels to indices.
-        - "log" : Stores operation logs for tracking modifications.
-    MODALITIES : list
-        List of supported sequencing modalities: ["bulk", "lcm", "scdna"].
-    INDICES : list
-        List of available indices: ["SNV", "sample"].
+
 
     Instance Attributes
     -------------------
@@ -137,8 +107,7 @@ class DNAStream:
         If True, enables verbose output during operations (default: False).
     file : h5py.File
         The HDF5 file object that manages storage and retrieval.
-    schema : dict
-        A dictionary defining the structure and data types of SNV and sample datasets.
+
 
     Methods
     -------
@@ -178,7 +147,7 @@ class DNAStream:
     CNA = "CNA"
     CLONAL= "clonal"
     
-    MODALITIES = [BULK, LCM, SCDNA]
+
     INDICES = [SNV, SAMPLE]
     TREES = [SNV, CNA, CLONAL ]
 
@@ -192,6 +161,8 @@ class DNAStream:
 
         self.file = h5py.File(filename, "a")  # Append mode (does not overwrite)
 
+        #only for 1D unchunked data, like logs, dataframes, tree lists
+        #multi-dimensional data tables like READ_COUNTS, must be built separately to optimize chunking and shape specification
         self._recursive_build(SCEHMA)
 
 
@@ -201,12 +172,7 @@ class DNAStream:
                     self.add_dataset_to_file(key, shape=(0,0), maxshape=(None,None), dtype=dtype, 
                                                  compression="gzip", chunks=(1, 5000))
                     self.file[key].dims[0].label = DNAStream.SNV
-                    self.file[key].dims[1].label = DNAStream.SAMPLE
-                    
-                    # if f"{group_path}/{reads}" not in self.file:
-                    #     self.file.create_dataset(f"{group_path}/{reads}", shape=(0,0), maxshape=(None,None), dtype='i', 
-                    #                              compression="gzip", chunks=(1, 5000))
-                      
+                    self.file[key].dims[1].label = DNAStream.SAMPLE                      
 
 
         
@@ -1300,6 +1266,11 @@ class DNAStream:
 
         self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
 
+    def add_pyclone_file(self, fname):
+        pass 
+
+
+
     def close(self):
         """
         Close the HDF5 file safely.
@@ -1309,6 +1280,7 @@ class DNAStream:
         self.file.close()
 
 
+    
 ############ TEST ###################
 
 # rc_pth = "/rsrch6/home/genetics/vanloolab/llweber/MPNST/scdna/read_counts"

@@ -8,13 +8,13 @@ See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.githu
  - `pandas`
 
 
-
 ## Schema (under development)
+The schema is currently underdevelopment is subject to change but below is the currently implemented or prospective design (*). 
 ```
 /
  ├── SNV/                     # Shared SNV index
  │   ├── labels               #short name chr:pos:ref:alt
-     |── data                 #dataframe structure containing quality scores, number of callers, etc
+     |── data                #dataframe structure containing quality scores, number of callers, etc
      |── cluster
      |── index_map             #json string for fast loading and saving
      |-- log
@@ -24,32 +24,24 @@ See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.githu
      |── cluster
      |── index_map
      |-- log
- ├── edge_list/               # Read count matrices
- │   ├── bulk/                  # Bulk sequencing read counts
- │   │   ├── variant       # SNVs x Samples (variant read counts)
- │   │   ├── total         # SNVs x Samples (total read counts)
- │   ├── lcm/                    # LCM sequencing read counts
- │   │   ├── variant       
- │   │   ├── total         
- │   ├── scdna/                  # scDNA-seq read counts
- │   │   ├── variant       
- │   │   ├── total 
  |-- trees/
- |   |-- SNV_trees/   #edge lists of clusters
- |   |     |- trees
+ |   |-- SNV_trees/  
+ |   |     |- trees      #edge lists of clusters
  |   |     |- data      #holds the likelihood, rank, method used to generate, etc
  |   |     |- index_map  #hold the index map
- |   |-- CNA_trees     # cell lineage trees   #newick strings
- |   |     |- trees
- |   |     |- data      #holds the likelihood, rank, method used to generate, etc
+ |   |-- CNA_trees     
+ |   |     |- trees      #edge lists (*) probably changed to Newick strings
+ |   |     |- data      #holds the label, likelihood, rank, method used to generate, etc
  |   |     |- index_map
  |   |-- clonal_trees (joint CNA SNV tree)/
- |   |     |-- tree (edge list)
- |   |     |-- genotypes  (structured array of node/snv/x/y/x_bar/y_bar)
- |   |     |-- clonal proportions (U)
- |   |     |-- sample assignment 
+ |   |     |-- tree 
+ |   |     |-- data      #holds the likelihood, rank, method used to generate, etc
+ |   |     |-- index_map
+ |   |     |-- genotypes (*) (structured array of node/snv/x/y/x_bar/y_bar)
+ |   |     |-- clonal proportions (*) (U)
+ |   |     |-- sample assignment (*)
  |   |    
- |-- copy_number/
+ |-- copy_number/ (*)
  |   ├── /bulk/
  |   │   ├── /segments    # Bulk-specific segment index
  |   │   ├── /profiles       # Tensor: (sample, segment, allele CN, proportion μ)
@@ -69,7 +61,7 @@ See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.githu
  |   │   ├── /metadata    # LCM-specific metadata
  ├── metadata/ 
      |-- log                  # Metadata storage
- │   ├── sample_info              # Sample IDs
- │   ├── processing_parameters
+ │   ├── sample_info  (*)            # Sample IDs
+ │   ├── processing_parameters (*)
 
 ```
