@@ -1,6 +1,14 @@
-# DNAStream: A multisample, multiplatform DNA sequencing HDF5 data structure for integrated downstream evolutionary analsysis 
+# DNAStream
+DNAStream is a multisample, multiplatform DNA sequencing HDF5 data structure for integrated downstream evolutionary analysis. 
+
+For the source code, visit [https://github.mdanderson.org/llweber/DNAStream](https://github.mdanderson.org/llweber/DNAStream).
 
 See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.github.mdanderson.org/llweber/DNAStream/) for the API.
+
+
+See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.github.mdanderson.org/llweber/DNAStream/) for the API.
+
+![overview](overview.png)
 
 ## Dependencies
  - `h5py`

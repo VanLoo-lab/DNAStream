@@ -5,6 +5,9 @@ For the source code, visit [https://github.mdanderson.org/llweber/DNAStream](htt
 
 See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.github.mdanderson.org/llweber/DNAStream/) for the API.
 
+
+![overview](docs/images/overview.png)
+
 ## Dependencies
  - `h5py`
  - `numpy`
