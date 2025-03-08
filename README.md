@@ -8,6 +8,20 @@ See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.githu
 
 ![overview](overview.png)
 
+
+## Table of Contents
+- [Dependencies](#dependencies)
+- [Installation](#installation)
+- [Tutorial](#tutorial)
+  - [Initializing DNAStream](#initializing-dnastream)
+  - [Adding SNVs from MAF Files](#adding-snvs-from-maf-files)
+  - [Adding Read Counts](#adding-read-counts)
+  - [Tree File Format for SNV Phylogenies](#tree-file-format-for-snv-phylogenies)
+  - [Adding SNV Phylogenies](#adding-snv-phylogenies)
+  - [Viewing Modification Logs](#viewing-modification-logs)
+- [Schema (Under Development)](#schema-under-development)
+
+
 ## Dependencies
  - `h5py`
  - `numpy`
@@ -18,7 +32,7 @@ See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.githu
 
 Clone the git repository and create a conda environment (recommended).  
 
-```
+```bash
 git clone git@github.mdanderson.org:llweber/DNAStream.git
 cd DNAstream
 mamba create -n dnastream python=3.11
@@ -27,7 +41,7 @@ mamba activate dnastream
 
 Install the `dnastream` package and dependencies via pip.  
 
-```
+```bash
 pip install .  
 ```
 
@@ -40,10 +54,12 @@ python -c "from dnastream import DNAStream"
  Packing is ready to use if no errors occurred. 
 
 
- ## Usage
+ ## Tutorial
 
+
+### Initializing DNAStream
  Import and initialize a DNAStream.
- ```
+ ```python
 #create a DNAStream object and corresponding HFD5 file
 from dnastream import DNAStream
 
@@ -52,8 +68,9 @@ ds = DNAStream("myfile.h5", verbose=True)
 
 ```
 
+### Adding SNVs from MAF Files
 Add SNVs to index and associated metadata from a MAF file(s).
-```
+```python
 #add SNVs to index and associated metadata with 
 maf_file = "path/to/favorite/maf/file"
 ds.add_maf_file(maf_file)
@@ -64,8 +81,9 @@ ds.add_maf_file(my_maf_files)
 #DNAStream won't add duplicate SNVs (chr:pos:ref:alt) to the index. 
  ```
 
+### Adding Read Counts
 Add read counts for single-cell data
-```
+```python
 #must have columns ordered snv | sample | variant | total
 #column names will be ignored but the order matters. 
 read_count_file = "my_read_count_file.csv"
@@ -81,6 +99,7 @@ sample_log = ds.get_sample_log()
 print(sample_log)
 ```
 
+### Tree File Format for SNV Phylogenies
 Example of tree file format for SNV phylogenies:
 ```
 #tree 1
@@ -118,8 +137,9 @@ Example of tree file format for SNV phylogenies:
 
 ```
 
-Add SNV phylogenies to DNAStream
-```
+### Add SNV phylogenies
+Add SNV phylogenies to DNAStream.
+```python
 #ensure file is in the above format
 tree_file = "path/to/trees.txt"
 method= "conipher"
@@ -131,8 +151,9 @@ file.  If safe=True, trees will be not be added.  If safe=False, duplicate
 trees may be added if trees were previously loaded from the same source file. 
 
 
-View the modification log that tracks changes to any dataset
-```
+### Viewing Modification Logs
+View the modification log that tracks changes to any dataset.
+```python
 log = ds.get_dataset_log()
 print(log)
 ```
