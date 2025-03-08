@@ -11,10 +11,11 @@ import h5py
 import numpy as np
 import json 
 
-from .schema import SCEHMA, STRUCT_ARRAYS, META_TABLES, MODALITIES, READ_COUNTS
+from .schema import SCHEMA, STRUCT_ARRAYS, META_TABLES, MODALITIES, READ_COUNTS
 from .datatypes import EDGE_LIST_DTYPE 
 #TODO
 # - add pyclone addition
+# - add patient metadata
 # - add bulk phylogenies as edge lists
 
 """
@@ -143,7 +144,7 @@ class DNAStream:
 
     SNV = "SNV"
     SAMPLE = "sample"
-    TREE = "Trees"
+    TREE = "tree"
     CNA = "CNA"
     CLONAL= "clonal"
     
@@ -151,28 +152,32 @@ class DNAStream:
     INDICES = [SNV, SAMPLE]
     TREES = [SNV, CNA, CLONAL ]
 
-    def __init__(self, filename, verbose=False):
+    def __init__(self, filename, initialize=True, verbose=False):
 
         """Initialize HDF5 storage."""
         self.filename = filename
         self.verbose = verbose
-
     
-
+    
         self.file = h5py.File(filename, "a")  # Append mode (does not overwrite)
-
+        if self.verbose:
+            print(f"#Stream to connection {self.filename} open...")
+        
+        
         #only for 1D unchunked data, like logs, dataframes, tree lists
-        #multi-dimensional data tables like READ_COUNTS, must be built separately to optimize chunking and shape specification
-        self._recursive_build(SCEHMA)
+        #multi-dimensional data tables like READ_COUNTS, must be built separately 
+        # to optimize chunking and shape specification
+        if initialize:
+            self._recursive_build(SCHEMA)
 
 
 
-        # Create group structure for read counts
-        for key, dtype in READ_COUNTS.items():
-                    self.add_dataset_to_file(key, shape=(0,0), maxshape=(None,None), dtype=dtype, 
-                                                 compression="gzip", chunks=(1, 5000))
-                    self.file[key].dims[0].label = DNAStream.SNV
-                    self.file[key].dims[1].label = DNAStream.SAMPLE                      
+            # Create group structure for read counts
+            for key, dtype in READ_COUNTS.items():
+                        self.add_dataset_to_file(key, shape=(0,0), maxshape=(None,None), dtype=dtype, 
+                                                    compression="gzip", chunks=(1, 5000))
+                        self.file[key].dims[0].label = DNAStream.SNV
+                        self.file[key].dims[1].label = DNAStream.SAMPLE                      
 
 
         
@@ -245,7 +250,7 @@ class DNAStream:
                 self.file[path].attrs['columns'] = columns
             self._log_dataset_modification(path, operation="create", source_file=source_file)
         else:
-            print("Warning! Dataset exists at specified path and will not be overwritten.")
+            print(f"#Warning! '{path}' dataset exists and will not be overwritten.")
 
     
     def _log_dataset_modification(self, dataset_name, operation, source_file=""):
@@ -666,7 +671,7 @@ class DNAStream:
         index_dict : dict
             Dictionary mapping SNV labels to their respective indices.
         """
-        return self._save_index(index_dict, DNAStream.SNV)
+        return self._save_index(index_dict, f"{DNAStream.SNV}/index_map")
 
 
     def save_sample_index(self, index_dict):
@@ -678,7 +683,7 @@ class DNAStream:
         index_dict : dict
             Dictionary mapping sample labels to their respective indices.
         """
-        return self._save_index(index_dict, DNAStream.SAMPLE)
+        return self._save_index(index_dict, f"{DNAStream.SAMPLE}/index_map")
 
 
     def _load_index(self, index_name):
@@ -695,8 +700,8 @@ class DNAStream:
         dict
             A dictionary mapping labels to indices.
         """
-        if f"{index_name}/index_map" in self.file:
-            index_data = self.file[f"{index_name}/index_map"][()]
+        if index_name in self.file:
+            index_data = self.file[index_name][()]
             return json.loads(index_data[0]) if len(index_data) > 0 else {}
         return {}
 
@@ -713,8 +718,8 @@ class DNAStream:
             The index type, either DNAStream.SNV or DNAStream.SAMPLE.
         """
         index_json = json.dumps(index_dict)  # Convert dictionary to JSON string
-        self.file[f"{index_name}/index_map"].resize((1,))  # Ensure space in dataset
-        self.file[f"{index_name}/index_map"][0] = index_json  # Store JSON string in HDF5
+        self.file[index_name].resize((1,))  # Ensure space in dataset
+        self.file[index_name][0] = index_json  # Store JSON string in HDF5
 
 
     def batch_add_snvs(self, labels, source_file=""):
@@ -1110,7 +1115,7 @@ class DNAStream:
             self.add_maf_file(f, **kwargs)
 
 
-    def add_maf_file(self, fname, 
+    def add_maf_file(self, fname,
                                  missing_values= ["Unknown", "Na", "N/A", "na", "nan", 
                                                     "NaN", "NAN", "NONE", "None", "", "__UNKNOWN__"],
                                  required_cols =["Hugo_Symbol", "Chromosome", "Start_Position", "End_Position",
@@ -1174,7 +1179,6 @@ class DNAStream:
     
         snv_labels = maf["label"].tolist() 
 
-        
 
         try: 
 
@@ -1196,6 +1200,7 @@ class DNAStream:
             self.close()
             raise Exception(e)
 
+    @staticmethod
     def _parse_file(fname, sep_word='tree', nskip=0, sep="\t"):
         """
         Parses a text file containing multiple edge lists of trees.
@@ -1215,19 +1220,19 @@ class DNAStream:
                     new_tree = []
 
                 else:
-                    edge =( int(e) for e in line.strip().split(sep))
+                    edge = [ int(e) for e in line.strip().split(sep)]
                     new_tree.append((edge[0], edge[1])) 
             if new_tree:
                 tree_list.append(new_tree)
    
-        return tree_list
+        return tree_list, None
 
-    def _add_tree(self, label, edge_list,  tree_type,data=None, index=None):
+    def _add_tree(self,  edge_list,  tree_type,data=None, index=None):
        
-        trees = self.file[f"{DNAStream.TREE}/{tree_type}_tree"]
+        trees = self.file[f"{DNAStream.TREE}/{tree_type}_trees"]
         save = False
         if index is None:
-            index = self._load_index(f"{DNAStream.TREE}/{tree_type}_tree/index_map")
+            index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees/index_map")
             save = True
    
         numtrees = len(index)
@@ -1236,34 +1241,143 @@ class DNAStream:
         for key in trees:
             if key != "index_map":
                 trees[key].resize((new_size,))
-        
-        index[label] =numtrees
+        label = f"tree{numtrees}"
+        index[f"tree{numtrees}"] =numtrees
 
         if save:
             self._save_index(index, f"{DNAStream.TREE}/{tree_type}_tree/index_map")
        
      
-        trees["trees"] =np.array(edge_list, dtype=EDGE_LIST_DTYPE)
-
+        trees["trees"][numtrees] =np.array(edge_list, dtype=EDGE_LIST_DTYPE)
+        
         if data:
-            trees["data"][numtrees] = data # a single array 
+            data["label"] = label
+            trees["data"][numtrees] = data  
     
-    def add_trees_from_file(self, fname, tree_type="SNV", method=""):
-        
-        tree_index = self._load_index(f"{DNAStream.TREE}/{tree_type}/index_map")
-        
-        tree_list, data = self._parse_file(fname, method)
-        for i,edge_list in enumerate(tree_list):
-            label = f"tree{i}"
-            self._add_tree(label, edge_list, data[i], index=tree_index)
-        
-        self._save_index(tree_index, f"{DNAStream.TREE}/{tree_type}_tree/index_map")
-        
-        self._log_dataset_modification(f"{DNAStream.TREE}/{tree_type}_tree", operation="update", source_file=fname)
-    
-    def add_snv_tree_from_edge_list(self, edge_list, method="", likelihood=np.nan, rank=None):
-        self._add_snv_tree(edge_list)
+    def _search_data_by_filename(self, dataset_name, fname):
+        """
+        Search for rows in a dataset where the "file" column matches a given filename.
 
+        Parameters
+        ----------
+        dataset_name : str
+            The name of the dataset to search within.
+        fname : str
+            The filename to search for.
+
+        Returns
+        -------
+        list of int
+            A list of indices where the filename matches the "file" column in the dataset.
+            Returns an empty list if the column "file" is not present in the dataset.
+        """
+        df = self._get_data(dataset_name)
+        if "file" in df.columns:
+            return df.index[df["file"] == fname].to_list()
+        return []
+
+    def _check_safe(self, dataset_name, source_file):
+            indices = self._search_data_by_filename(dataset_name, source_file)
+            if len(indices) > 0:
+      
+                if self.verbose:
+                    print(f"#Warning! Entries already exist from {source_file} in '{dataset_name}'")
+                  
+                return False
+            else:
+                return True
+       
+
+    def add_trees_from_file(self, fname, tree_type="SNV", method="", safe=True):
+        """
+        Add phylogenetic trees from a file to the HDF5 dataset.
+
+        Parameters
+        ----------
+        fname : str
+            Path to the file containing tree structures.
+        tree_type : str, optional
+            The type of tree being added (e.g., "SNV", "CNA", "clonal"), by default "SNV".
+        method : str, optional
+            The method used to generate the tree (e.g., "conipher"), by default "".
+        safe : boolean, optional
+            Safe mode to refuse add trees to data if the entries from a given filename exists, by default True
+
+
+        Raises
+        ------
+        Exception
+            If there is an error processing the file or adding trees.
+
+        Notes
+        -----
+        - The function checks if trees from the source file already exist.
+        - Trees are parsed based on the method (e.g., "conipher" vs. space-separated format).
+        - Logs dataset modifications after adding trees.
+        """
+        try:
+            source_file = str(pathlib.Path(fname).resolve())
+
+            dataset_name = f"{DNAStream.TREE}/{tree_type}_trees/data"
+
+            if safe and not self._check_safe(dataset_name, source_file):
+                print("#Warning! Attempting overwrite in Safe mode, use safe=F, to force append trees.")
+                return 
+
+ 
+
+            tree_index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees/index_map")
+
+            # Parse tree file according to method
+            if method == "conipher":
+                tree_list, scores = self._parse_file(fname)
+            else:
+                tree_list, scores = self._parse_file(fname, nskip=1, sep=" ")
+
+            data_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["data"]
+          
+            for i, edge_list in enumerate(tree_list):
+                if scores is None:
+                    dat = np.array([("", method, np.nan, i, source_file)], dtype=data_dtype)
+                else:
+                    dat = np.array([("", method, scores[i], i, source_file)], dtype=data_dtype)
+
+                self._add_tree(edge_list, tree_type, data=dat, index=tree_index)
+
+            self._save_index(tree_index, f"{DNAStream.TREE}/{tree_type}_trees/index_map")
+            self._log_dataset_modification(f"{DNAStream.TREE}/{tree_type}_trees", operation="update", source_file=fname)
+
+            if self.verbose:
+                print(f"#{len(tree_list)} {tree_type} trees added from {method}.")
+
+        except Exception as e:
+            self.close()
+            raise Exception(e)
+
+
+    def add_snv_tree_from_edge_list(self, edge_list, method="", score=np.nan, rank=np.nan):
+        """
+        Add an SNV tree from an edge list to the dataset.
+
+        Parameters
+        ----------
+        edge_list : list of tuples
+            List of (parent, child) edges representing the tree structure.
+        method : str, optional
+            The method used to generate the tree (e.g., "conipher"), by default "".
+        score : float, optional
+            A numerical score associated with the tree (e.g., likelihood score), by default NaN.
+        rank : int, optional
+            Rank of the tree among other inferred trees, by default NaN.
+
+        Notes
+        -----
+        - The function logs modifications to the SNV tree dataset.
+        - The tree is added with metadata including method, score, and rank.
+        """
+        data_dtype = SCHEMA[DNAStream.TREE]["SNV_trees"]["data"]
+        dat = np.array([("", method, score, rank, "")], dtype=data_dtype)
+        self._add_tree(edge_list, "SNV", data=dat)
         self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
 
     def add_pyclone_file(self, fname):
@@ -1277,23 +1391,9 @@ class DNAStream:
 
         This should be called when finished working with the DNAStream object.
         """
+      
         self.file.close()
+        if self.verbose:
+            print(f"#Stream to connection {self.filename} closed.")
 
 
-    
-############ TEST ###################
-
-# rc_pth = "/rsrch6/home/genetics/vanloolab/llweber/MPNST/scdna/read_counts"
-# ds = DNAStream(filename="temp.h5", verbose=True)
-# print(ds)
-# samples = [f"GEM2.2_PT_{i}" for i in range(2,6)] 
-# maf_files = [f"../data_summary/WGS_MUTATION/Somatic/2outof3_SNV/{sample}_SNVs_2outof3.maf" for sample in samples]
-# indices = ds.add_maf_files(maf_files)
-# print(ds.get_snv_log())
-# print(ds)
-# read_count_file = f"{rc_pth}/GEM2.2.csv"
-# ds.add_read_counts(read_count_file, source="scdna")
-# print(ds.get_snv_log())
-# print(ds.get_sample_log())
-# print(ds)
-# ds.close()

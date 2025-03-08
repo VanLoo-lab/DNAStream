@@ -12,7 +12,7 @@ META_TABLES = ["data", "label", "cluster", "index_map", "log"]
 
 READ_COUNTS = {f"read_counts/{m}/{c}":  "i" for c in ["variant", "total"] for m in MODALITIES}
     
-SCEHMA = {  "metadata" : 
+SCHEMA = {  "metadata" : 
                 {
                     "log" : DATASET_LOG_DTYPE
                 },
