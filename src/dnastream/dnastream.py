@@ -629,7 +629,7 @@ class DNAStream:
                 return idx
 
         self.file[f"{index_name}/label"][new_idx] = label
-        self.file[f"{index_name}/index_map"][label] = new_idx
+        self.file[f"{index_name}/index"][label] = new_idx
         if data:
             self.file[f"{index_name}/data"][new_idx] = data
         if cluster:
@@ -671,7 +671,7 @@ class DNAStream:
         index_dict : dict
             Dictionary mapping SNV labels to their respective indices.
         """
-        return self._save_index(index_dict, f"{DNAStream.SNV}/index_map")
+        return self._save_index(index_dict, f"{DNAStream.SNV}")
 
 
     def save_sample_index(self, index_dict):
@@ -683,7 +683,7 @@ class DNAStream:
         index_dict : dict
             Dictionary mapping sample labels to their respective indices.
         """
-        return self._save_index(index_dict, f"{DNAStream.SAMPLE}/index_map")
+        return self._save_index(index_dict, f"{DNAStream.SAMPLE}")
 
 
     def _load_index(self, index_name):
@@ -700,8 +700,11 @@ class DNAStream:
         dict
             A dictionary mapping labels to indices.
         """
+        if self.verbose:
+            print(f"#Loading index {index_name} into memory.")
         if index_name in self.file:
-            index_data = self.file[index_name][()]
+        
+            index_data = self.file[f"{index_name}/index"][()]
             return json.loads(index_data[0]) if len(index_data) > 0 else {}
         return {}
 
@@ -717,9 +720,11 @@ class DNAStream:
         index_name : str
             The index type, either DNAStream.SNV or DNAStream.SAMPLE.
         """
+        if self.verbose:
+            print(f"#Writing {index_name} to memory.")
         index_json = json.dumps(index_dict)  # Convert dictionary to JSON string
-        self.file[index_name].resize((1,))  # Ensure space in dataset
-        self.file[index_name][0] = index_json  # Store JSON string in HDF5
+        self.file[f"{index_name}/index"].resize((1,))  # Ensure space in dataset
+        self.file[f"{index_name}/index"][0] = index_json  # Store JSON string in HDF5
 
 
     def batch_add_snvs(self, labels, source_file=""):
@@ -780,7 +785,7 @@ class DNAStream:
         """
         index_dict = self._load_index(index_name)
         pre_size = len(index_dict)
-
+        
         indices = []
         new = 0
         for lab in labels:
@@ -794,10 +799,10 @@ class DNAStream:
 
         indices = np.array(indices)
         labels = np.array(labels)
-        
+
         # Sort indices and labels concurrently for HDF5 fancy indexing
         labels, indices = labels[np.argsort(indices)].tolist(), indices[np.argsort(indices)].tolist()
-
+   
         if self.file[f"{index_name}/label"].shape[0] != len(index_dict):
             if index_name == DNAStream.SNV:
                 self._resize_all(m=len(index_dict))
@@ -805,6 +810,7 @@ class DNAStream:
                 self._resize_all(n=len(index_dict))
 
         self.file[f"{index_name}/label"][indices] = labels
+
         self._save_index(index_dict, index_name)
         post_size = len(index_dict)
 
@@ -1182,7 +1188,7 @@ class DNAStream:
 
         try: 
 
-            
+         
                 snv_idx = self.batch_add_snvs(snv_labels, source_file=fname)
 
                 #sort dataframe according to the newly assigned indices in DNAStream
@@ -1191,7 +1197,7 @@ class DNAStream:
                 indices = maf["snv_idx"].tolist()
                 snv_data = maf[[val for _, val in column_dict.items()]]
               
-    
+      
                 self.add_snv_data(indices, snv_data, source_file=fname)
 
 
@@ -1232,20 +1238,20 @@ class DNAStream:
         trees = self.file[f"{DNAStream.TREE}/{tree_type}_trees"]
         save = False
         if index is None:
-            index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees/index_map")
+            index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees")
             save = True
    
         numtrees = len(index)
         new_size = numtrees + 1
 
         for key in trees:
-            if key != "index_map":
+            if key != "index":
                 trees[key].resize((new_size,))
         label = f"tree{numtrees}"
         index[f"tree{numtrees}"] =numtrees
 
         if save:
-            self._save_index(index, f"{DNAStream.TREE}/{tree_type}_tree/index_map")
+            self._save_index(index, f"{DNAStream.TREE}/{tree_type}_tree")
        
      
         trees["trees"][numtrees] =np.array(edge_list, dtype=EDGE_LIST_DTYPE)
@@ -1326,8 +1332,8 @@ class DNAStream:
 
  
 
-            tree_index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees/index_map")
-
+            tree_index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees")
+            print("Parsing file...")
             # Parse tree file according to method
             if method == "conipher":
                 tree_list, scores = self._parse_file(fname)
@@ -1344,7 +1350,7 @@ class DNAStream:
 
                 self._add_tree(edge_list, tree_type, data=dat, index=tree_index)
 
-            self._save_index(tree_index, f"{DNAStream.TREE}/{tree_type}_trees/index_map")
+            self._save_index(tree_index, f"{DNAStream.TREE}/{tree_type}_trees")
             self._log_dataset_modification(f"{DNAStream.TREE}/{tree_type}_trees", operation="update", source_file=fname)
 
             if self.verbose:

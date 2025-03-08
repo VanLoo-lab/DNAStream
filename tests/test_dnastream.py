@@ -18,52 +18,52 @@ def temp_h5_file():
     if os.path.exists(filename):
         os.remove(filename)
 
-# def test_dnastream_initialization(temp_h5_file):
-#     """Test DNAStream object initialization."""
-#     ds = DNAStream(filename=temp_h5_file, verbose=True)
-#     assert ds.file is not None
-#     assert isinstance(ds.file, h5py.File)
-#     ds.close()
+def test_dnastream_initialization(temp_h5_file):
+    """Test DNAStream object initialization."""
+    ds = DNAStream(filename=temp_h5_file, verbose=True)
+    assert ds.file is not None
+    assert isinstance(ds.file, h5py.File)
+    ds.close()
 
-# def test_add_maf_files(temp_h5_file):
-#     """Test adding MAF files."""
-#     ds = DNAStream(filename=temp_h5_file, verbose=True)
-#     indices = ds.add_maf_files(MAF_FILES)
-#     assert indices is None
+def test_add_maf_files(temp_h5_file):
+    """Test adding MAF files."""
+    ds = DNAStream(filename=temp_h5_file, verbose=True)
+    indices = ds.add_maf_files(MAF_FILES)
+    assert indices is None
 
-#     ds.close()
+    ds.close()
 
-# def test_add_read_counts(temp_h5_file):
-#     """Test adding read counts."""
-#     ds = DNAStream(filename=temp_h5_file, verbose=True)
-#     ds.add_read_counts(READ_COUNT_FILE, source="scdna")
-#     snv_log = ds.get_snv_log()
-#     sample_log = ds.get_sample_log()
+def test_add_read_counts(temp_h5_file):
+    """Test adding read counts."""
+    ds = DNAStream(filename=temp_h5_file, verbose=True)
+    ds.add_read_counts(READ_COUNT_FILE, source="scdna")
+    snv_log = ds.get_snv_log()
+    sample_log = ds.get_sample_log()
     
-#     assert not snv_log.empty
-#     assert not sample_log.empty
-#     ds.close()
+    assert not snv_log.empty
+    assert not sample_log.empty
+    ds.close()
 
-# def test_log_retrieval(temp_h5_file):
-#     """Test that logs are correctly retrieved after modifications."""
-#     ds = DNAStream(filename=temp_h5_file, verbose=True)
-#     ds.add_maf_files(MAF_FILES)
-#     ds.add_read_counts(READ_COUNT_FILE, source="scdna")
+def test_log_retrieval(temp_h5_file):
+    """Test that logs are correctly retrieved after modifications."""
+    ds = DNAStream(filename=temp_h5_file, verbose=True)
+    ds.add_maf_files(MAF_FILES)
+    ds.add_read_counts(READ_COUNT_FILE, source="scdna")
+    print("here")
+    snv_log = ds.get_snv_log()
+    sample_log = ds.get_sample_log()
     
-#     snv_log = ds.get_snv_log()
-#     sample_log = ds.get_sample_log()
-    
-#     assert snv_log is not None
-#     assert sample_log is not None
-#     assert len(snv_log) > 0
-#     assert len(sample_log) > 0
-#     ds.close()
+    assert snv_log is not None
+    assert sample_log is not None
+    assert len(snv_log) > 0
+    assert len(sample_log) > 0
+    ds.close()
 
-# def test_dnastream_cleanup(temp_h5_file):
-#     """Ensure the HDF5 file closes properly after operations."""
-#     ds = DNAStream(filename=temp_h5_file, verbose=True)
-#     ds.close()
-#     assert ds.file.id.valid == 0  # Check that the file is closed
+def test_dnastream_cleanup(temp_h5_file):
+    """Ensure the HDF5 file closes properly after operations."""
+    ds = DNAStream(filename=temp_h5_file, verbose=True)
+    ds.close()
+    assert ds.file.id.valid == 0  # Check that the file is closed
 
 
 def test_add_snv_trees(temp_h5_file):
@@ -84,7 +84,7 @@ def test_add_snv_trees(temp_h5_file):
 
 
     #test sapling
-    ds.add_trees_from_file(SAPLING, tree_type="SNV", method="sapling", safe=tree_dat)
+    ds.add_trees_from_file(SAPLING, tree_type="SNV", method="sapling", safe=True)
     tree_dat  = ds._get_data("tree/SNV_trees/data")
     assert tree_dat.shape[0] > numtrees*2
 

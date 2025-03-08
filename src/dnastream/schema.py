@@ -6,7 +6,7 @@ MODALITIES = ["bulk", "lcm", "scdna"]
 
 STRUCT_ARRAYS = ["log", "data"]
 
-META_TABLES = ["data", "label", "cluster", "index_map", "log"]
+META_TABLES = ["data", "label", "cluster", "index", "log"]
 
 
 
@@ -20,7 +20,7 @@ SCHEMA = {  "metadata" :
                 {"label" :  h5py.string_dtype(encoding="utf-8"),
                 "cluster" : "i8",
                 "data" : SNV_DTYPE,
-                "index_map": h5py.string_dtype("utf-8"),
+                "index": h5py.string_dtype("utf-8"),
                 "log" : LOG_DTYPE,
                 },
             "sample" : 
@@ -28,7 +28,7 @@ SCHEMA = {  "metadata" :
                 "label":    h5py.string_dtype(encoding="utf-8") ,
                 "cluster" : "i8",
                 "data" : SAMPLE_DTYPE,
-                "index_map":    h5py.string_dtype("utf-8"),
+                "index":    h5py.string_dtype("utf-8"),
                 "log" : LOG_DTYPE
                 },
             "tree" :
@@ -37,19 +37,19 @@ SCHEMA = {  "metadata" :
                        {
                            "trees" : VLEN_EDGE_DTYPE,
                            "data"  : TREE_DTYPE,
-                           "index_map" : h5py.string_dtype("utf-8"),
+                           "index" : h5py.string_dtype("utf-8"),
                        },
                     "CNA_trees" : 
                        {
                            "trees" : VLEN_EDGE_DTYPE,
                            "data"  : TREE_DTYPE,
-                           "index_map" : h5py.string_dtype("utf-8"),
+                           "index" : h5py.string_dtype("utf-8"),
                        },
                     "clonal_trees" : 
                        {
                            "trees" : VLEN_EDGE_DTYPE,
                            "data"  : TREE_DTYPE,
-                           "index_map" : h5py.string_dtype("utf-8"),
+                           "index" : h5py.string_dtype("utf-8"),
                        },
                 }
    
