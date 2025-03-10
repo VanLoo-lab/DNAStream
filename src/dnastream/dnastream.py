@@ -1,4 +1,4 @@
-import sys 
+import sys
 import os
 import getpass
 import socket
@@ -6,14 +6,15 @@ import pathlib
 import time
 from datetime import datetime
 import functools
-import pandas as pd 
-import h5py 
+import pandas as pd
+import h5py
 import numpy as np
-import json 
+import json
 
 from .schema import SCHEMA, STRUCT_ARRAYS, META_TABLES, MODALITIES, READ_COUNTS
-from .datatypes import EDGE_LIST_DTYPE 
-#TODO
+from .datatypes import EDGE_LIST_DTYPE
+
+# TODO
 # - add pyclone addition
 # - add patient metadata
 # - add bulk phylogenies as edge lists
@@ -74,28 +75,28 @@ from .datatypes import EDGE_LIST_DTYPE
 """
 
 
-
-
 def timeit(func):
     """Decorator to measure execution time of a function."""
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         start_time = time.perf_counter()  # Start timer
-        result = func(*args, **kwargs)    # Run the function
-        end_time = time.perf_counter()    # End timer
+        result = func(*args, **kwargs)  # Run the function
+        end_time = time.perf_counter()  # End timer
         elapsed_time = end_time - start_time
         print(f"⏱ Function '{func.__name__}' took {elapsed_time:.4f} seconds")
         return result
+
     return wrapper
 
 
 class DNAStream:
     """
-    DNAStream is an HDF5-based data structure for efficient storage, indexing, 
+    DNAStream is an HDF5-based data structure for efficient storage, indexing,
     and retrieval of processed DNA sequencing data across multiple sequencing modalities.
 
-    It provides structured storage for SNV read counts, copy number profiles, and metadata 
-    from bulk, LCM, and single-cell sequencing. The design ensures consistency across 
+    It provides structured storage for SNV read counts, copy number profiles, and metadata
+    from bulk, LCM, and single-cell sequencing. The design ensures consistency across
     different data modalities and enables efficient querying and updating.
 
 
@@ -146,51 +147,48 @@ class DNAStream:
     SAMPLE = "sample"
     TREE = "tree"
     CNA = "CNA"
-    CLONAL= "clonal"
-    
+    CLONAL = "clonal"
 
     INDICES = [SNV, SAMPLE]
-    TREES = [SNV, CNA, CLONAL ]
+    TREES = [SNV, CNA, CLONAL]
 
     def __init__(self, filename, initialize=True, verbose=False):
-
         """Initialize HDF5 storage."""
         self.filename = filename
         self.verbose = verbose
-    
-    
+
         self.file = h5py.File(filename, "a")  # Append mode (does not overwrite)
         if self.verbose:
             print(f"#Stream to connection {self.filename} open...")
-        
-        
-        #only for 1D unchunked data, like logs, dataframes, tree lists
-        #multi-dimensional data tables like READ_COUNTS, must be built separately 
+
+        # only for 1D unchunked data, like logs, dataframes, tree lists
+        # multi-dimensional data tables like READ_COUNTS, must be built separately
         # to optimize chunking and shape specification
         if initialize:
             self._recursive_build(SCHEMA)
 
-
-
             # Create group structure for read counts
             for key, dtype in READ_COUNTS.items():
-                        self.add_dataset_to_file(key, shape=(0,0), maxshape=(None,None), dtype=dtype, 
-                                                    compression="gzip", chunks=(1, 5000))
-                        self.file[key].dims[0].label = DNAStream.SNV
-                        self.file[key].dims[1].label = DNAStream.SAMPLE                      
+                self.add_dataset_to_file(
+                    key,
+                    shape=(0, 0),
+                    maxshape=(None, None),
+                    dtype=dtype,
+                    compression="gzip",
+                    chunks=(1, 5000),
+                )
+                self.file[key].dims[0].label = DNAStream.SNV
+                self.file[key].dims[1].label = DNAStream.SAMPLE
 
-
-        
     def __str__(self):
         """To string method"""
         m = self.file[f"{DNAStream.SNV}/label"].shape[0]
         n = self.file[f"{DNAStream.SAMPLE}/label"].shape[0]
 
-        mystr = f"DNAStream object with {m} SNVs and {n} samples" 
+        mystr = f"DNAStream object with {m} SNVs and {n} samples"
         mystr += f"\nHDF5 File: {self.filename}"
-      
+
         return mystr
-    
 
     def _recursive_build(self, schema, path=""):
         """
@@ -203,33 +201,36 @@ class DNAStream:
         path : str, optional
             The current path in the HDF5 hierarchy, used for recursive traversal.
         """
-        if isinstance(schema, dict):  
+        if isinstance(schema, dict):
             for key, datasets in schema.items():
                 new_path = f"{path}/{key}" if path else key  # Handle root case
-                
+
                 if isinstance(datasets, dict):  # If it's another dictionary, recurse
                     self._recursive_build(datasets, new_path)
                 else:  # If it's a dataset, create it
                     dtype = datasets  # Since `datasets` holds dtype here
-                    
+
                     columns = []
                     if key in STRUCT_ARRAYS:
                         columns = list(dtype.names)  # Get column names from dtype
-                    
-                 
+
                     self.add_dataset_to_file(
-                        new_path, shape=(0,), maxshape=(None,),
-                        dtype=dtype, compression="gzip",
-                        columns=columns
+                        new_path,
+                        shape=(0,),
+                        maxshape=(None,),
+                        dtype=dtype,
+                        compression="gzip",
+                        columns=columns,
                     )
 
-    
-
-    def add_dataset_to_file(self, path,  
-                             dtype=h5py.string_dtype("utf-8"), 
-                             columns=[], 
-                             source_file="",
-                             **kwargs):
+    def add_dataset_to_file(
+        self,
+        path,
+        dtype=h5py.string_dtype("utf-8"),
+        columns=[],
+        source_file="",
+        **kwargs,
+    ):
         """
         Internal function as wrapper to create a new dataset for the file
 
@@ -237,22 +238,23 @@ class DNAStream:
         ----------
 
         path : str
-            path to where dataset should be added 
+            path to where dataset should be added
         dtype : numpy.dtype
             the simple or complex datatype of the dataset
-        
+
         """
         if path not in self.file:
             if self.verbose:
                 print(f"Creating dataset {path}...")
-            self.file.create_dataset(path, dtype=dtype, **kwargs) 
+            self.file.create_dataset(path, dtype=dtype, **kwargs)
             if columns:
-                self.file[path].attrs['columns'] = columns
-            self._log_dataset_modification(path, operation="create", source_file=source_file)
+                self.file[path].attrs["columns"] = columns
+            self._log_dataset_modification(
+                path, operation="create", source_file=source_file
+            )
         else:
             print(f"#Warning! '{path}' dataset exists and will not be overwritten.")
 
-    
     def _log_dataset_modification(self, dataset_name, operation, source_file=""):
         """
         Logs modifications to any dataset within the HDF5 file.
@@ -283,8 +285,12 @@ class DNAStream:
 
         # Store modification log
         log[current_size] = (
-            timestamp_str, dataset_name.encode("utf-8"), operation.encode("utf-8"),
-            user, hostname, source_file
+            timestamp_str,
+            dataset_name.encode("utf-8"),
+            operation.encode("utf-8"),
+            user,
+            hostname,
+            source_file,
         )
 
     @timeit
@@ -312,8 +318,9 @@ class DNAStream:
             If an error occurs during file processing.
         """
         try:
-            rc = pd.read_csv(fname, names=["snv","sample", "var", "total"], header=None, skiprows=1)
-       
+            rc = pd.read_csv(
+                fname, names=["snv", "sample", "var", "total"], header=None, skiprows=1
+            )
 
             samples = rc["sample"].unique().tolist()
 
@@ -324,14 +331,15 @@ class DNAStream:
             sample_idx = self.batch_add_samples(samples, source_file=fname)
             sample_indices = list(sample_idx.values())
             if source:
-                self._update_value(sample_indices, f"{DNAStream.SAMPLE}/data", "source", source)
-            
+                self._update_value(
+                    sample_indices, f"{DNAStream.SAMPLE}/data", "source", source
+                )
+
             if location:
-                self._update_value(sample_indices, f"{DNAStream.SAMPLE}/data", "location", location)
+                self._update_value(
+                    sample_indices, f"{DNAStream.SAMPLE}/data", "location", location
+                )
 
-            
-
-                
             # Map indices for SNVs and samples
             rc["snv_idx"] = rc["snv"].map(snv_idx)
             rc["sample_idx"] = rc["sample"].map(sample_idx)
@@ -342,43 +350,32 @@ class DNAStream:
             var_counts = rc["var"].to_numpy()
             total_counts = rc["total"].to_numpy()
 
-
-               # **Sort indices to satisfy HDF5 fancy indexing rules**
-            sorted_order = np.lexsort((sample_indices_arr, snv_indices_arr))  
+            # **Sort indices to satisfy HDF5 fancy indexing rules**
+            sorted_order = np.lexsort((sample_indices_arr, snv_indices_arr))
             snv_indices_arr = snv_indices_arr[sorted_order]
             sample_indices_arr = sample_indices_arr[sorted_order]
             var_counts = var_counts[sorted_order]
             total_counts = total_counts[sorted_order]
 
-
             # Update dataset in batch instead of looping
             dat = self.file[f"read_counts/{source}"]
             unique_snv_indices = np.unique(snv_indices_arr)  # Get unique SNV indices
-            
-    
 
             for snv in unique_snv_indices:
                 mask = snv_indices_arr == snv  # Select all entries for this snv index
                 dat["variant"][snv, sample_indices_arr[mask]] = var_counts[mask]
                 dat["total"][snv, sample_indices_arr[mask]] = total_counts[mask]
-            
+
             for arr in ["variant", "total"]:
-                self._log_dataset_modification(f"read_counts/{source}/{arr}", operation="update", source_file=fname)
-
-
-
-
+                self._log_dataset_modification(
+                    f"read_counts/{source}/{arr}", operation="update", source_file=fname
+                )
 
         except Exception as e:
             self.close()
             raise Exception(e)
 
-
-
-
-
-        
-    def _add_read_count(self, source,snv_idx, sample_idx, var=0, total=0):
+    def _add_read_count(self, source, snv_idx, sample_idx, var=0, total=0):
         """
         Internal function to add a single read count entry. Currently not used.
 
@@ -395,11 +392,10 @@ class DNAStream:
         total : int, optional
             Total read count (default is 0).
         """
-    
+
         dat = self.file[f"read_counts/{source}"]
-        dat['variant'][snv_idx,sample_idx] = var 
-        dat['total'][snv_idx,sample_idx] = total
-    
+        dat["variant"][snv_idx, sample_idx] = var
+        dat["total"][snv_idx, sample_idx] = total
 
     def snv_label_to_idx(self, label):
         """
@@ -416,7 +412,7 @@ class DNAStream:
             Index of the SNV if found, else None.
         """
         return self._idx_by_label(label, index_name=DNAStream.SNV)
-    
+
     def sample_label_to_idx(self, label):
         """
         Retrieve the index of a sample label.
@@ -432,7 +428,7 @@ class DNAStream:
             Index of the sample if found, else None.
         """
         return self._idx_by_label(label, index_name=DNAStream.SAMPLE)
-    
+
     def _idx_by_label(self, label, index_name):
         """
         Internal function to retrieve the index from a label.
@@ -452,20 +448,19 @@ class DNAStream:
         """
         labs = self.file[f"{index_name}/label"]
 
-        if len(labs) ==0:
+        if len(labs) == 0:
             return None
 
-        indices = np.where(labs[:] ==label)[0]
-        if len(indices) ==0:
-            return None 
+        indices = np.where(labs[:] == label)[0]
+        if len(indices) == 0:
+            return None
         elif len(indices) == 1:
             return indices[0]
         else:
             self.close()
-            raise ValueError("label is associated with multiple indices and could not be added.")
-     
-    
-
+            raise ValueError(
+                "label is associated with multiple indices and could not be added."
+            )
 
     def _label_by_idx(self, idx, index_name):
         """
@@ -481,21 +476,18 @@ class DNAStream:
 
         Returns
         -------
-        str 
+        str
             label if found
         """
         try:
-            label = self.file[f"{index_name}/label"][idx] 
+            label = self.file[f"{index_name}/label"][idx]
         except Exception as e:
             self.close()
             raise Exception(e)
 
-        return label   
+        return label
 
-
-
-
-    def _resize_all(self, m=None,n=None ):
+    def _resize_all(self, m=None, n=None):
         """
         Resize the HDF5 datasets to accommodate additional SNVs or samples.
 
@@ -512,10 +504,10 @@ class DNAStream:
                 if snv_data == "log":
                     continue
                 group_path = f"{DNAStream.SNV}/{snv_data}"
-            
+
                 self.file[group_path].resize((m,))
         else:
-            m= self.file[f"{DNAStream.SNV}/label"].shape[0]
+            m = self.file[f"{DNAStream.SNV}/label"].shape[0]
 
         if n:
             for sample_data in META_TABLES:
@@ -526,17 +518,13 @@ class DNAStream:
         else:
             n = self.file[f"{DNAStream.SAMPLE}/label"].shape[0]
 
-
         for modality in MODALITIES:
             group_path = f"read_counts/{modality}"
             for reads in ["variant", "total"]:
-                
+
                 mat = self.file[f"{group_path}/{reads}"]
                 mat.resize((m, n))
 
-
-
-    
     def add_snv(self, label, cluster=None, data=None, overwrite=False):
         """
         Add a single SNV (Single Nucleotide Variant) to the dataset.
@@ -557,8 +545,9 @@ class DNAStream:
         int
             The assigned index of the SNV in the dataset.
         """
-        return self.add_item(label, index=DNAStream.SNV, cluster=cluster, data=data, overwrite=overwrite)
-
+        return self.add_item(
+            label, index=DNAStream.SNV, cluster=cluster, data=data, overwrite=overwrite
+        )
 
     def add_sample(self, label, cluster=None, data=None, overwrite=False):
         """
@@ -580,10 +569,23 @@ class DNAStream:
         int
             The assigned index of the sample in the dataset.
         """
-        return self.add_item(label, index=DNAStream.SAMPLE, cluster=cluster, data=data, overwrite=overwrite)
+        return self.add_item(
+            label,
+            index=DNAStream.SAMPLE,
+            cluster=cluster,
+            data=data,
+            overwrite=overwrite,
+        )
 
-
-    def _add_item(self, label: str, index_name, index_dict=None, cluster=None, data=None, overwrite=False):
+    def _add_item(
+        self,
+        label: str,
+        index_name,
+        index_dict=None,
+        cluster=None,
+        data=None,
+        overwrite=False,
+    ):
         """
         Internal method to add an item (SNV or sample) to the dataset.
 
@@ -625,7 +627,9 @@ class DNAStream:
             if overwrite:
                 new_idx = idx
             else:
-                print(f"{label} exists in {index_name}, use overwrite=True to overwrite metadata.")
+                print(
+                    f"{label} exists in {index_name}, use overwrite=True to overwrite metadata."
+                )
                 return idx
 
         self.file[f"{index_name}/label"][new_idx] = label
@@ -636,7 +640,6 @@ class DNAStream:
             self.file[f"{index_name}/cluster"][new_idx] = cluster
 
         return new_idx
-
 
     def load_snv_index(self):
         """
@@ -649,7 +652,6 @@ class DNAStream:
         """
         return self._load_index(DNAStream.SNV)
 
-
     def load_sample_index(self):
         """
         Load the sample index from the HDF5 file.
@@ -660,7 +662,6 @@ class DNAStream:
             A dictionary mapping sample labels to their respective indices.
         """
         return self._load_index(DNAStream.SAMPLE)
-
 
     def save_snv_index(self, index_dict):
         """
@@ -673,7 +674,6 @@ class DNAStream:
         """
         return self._save_index(index_dict, f"{DNAStream.SNV}")
 
-
     def save_sample_index(self, index_dict):
         """
         Save the sample index to the HDF5 file.
@@ -684,7 +684,6 @@ class DNAStream:
             Dictionary mapping sample labels to their respective indices.
         """
         return self._save_index(index_dict, f"{DNAStream.SAMPLE}")
-
 
     def _load_index(self, index_name):
         """
@@ -703,11 +702,10 @@ class DNAStream:
         if self.verbose:
             print(f"#Loading index {index_name} into memory.")
         if index_name in self.file:
-        
+
             index_data = self.file[f"{index_name}/index"][()]
             return json.loads(index_data[0]) if len(index_data) > 0 else {}
         return {}
-
 
     def _save_index(self, index_dict, index_name):
         """
@@ -726,7 +724,6 @@ class DNAStream:
         self.file[f"{index_name}/index"].resize((1,))  # Ensure space in dataset
         self.file[f"{index_name}/index"][0] = index_json  # Store JSON string in HDF5
 
-
     def batch_add_snvs(self, labels, source_file=""):
         """
         Batch add multiple SNVs to the dataset.
@@ -743,8 +740,9 @@ class DNAStream:
         dict
             A dictionary mapping SNV labels to their respective indices.
         """
-        return self._batch_add_index(labels, index_name=DNAStream.SNV, source_file=source_file)
-
+        return self._batch_add_index(
+            labels, index_name=DNAStream.SNV, source_file=source_file
+        )
 
     def batch_add_samples(self, labels, source_file=""):
         """
@@ -762,8 +760,9 @@ class DNAStream:
         dict
             A dictionary mapping sample labels to their respective indices.
         """
-        return self._batch_add_index(labels, index_name=DNAStream.SAMPLE, source_file=source_file)
-
+        return self._batch_add_index(
+            labels, index_name=DNAStream.SAMPLE, source_file=source_file
+        )
 
     def _batch_add_index(self, labels, index_name, source_file=""):
         """
@@ -785,7 +784,7 @@ class DNAStream:
         """
         index_dict = self._load_index(index_name)
         pre_size = len(index_dict)
-        
+
         indices = []
         new = 0
         for lab in labels:
@@ -801,8 +800,11 @@ class DNAStream:
         labels = np.array(labels)
 
         # Sort indices and labels concurrently for HDF5 fancy indexing
-        labels, indices = labels[np.argsort(indices)].tolist(), indices[np.argsort(indices)].tolist()
-   
+        labels, indices = (
+            labels[np.argsort(indices)].tolist(),
+            indices[np.argsort(indices)].tolist(),
+        )
+
         if self.file[f"{index_name}/label"].shape[0] != len(index_dict):
             if index_name == DNAStream.SNV:
                 self._resize_all(m=len(index_dict))
@@ -815,18 +817,27 @@ class DNAStream:
         post_size = len(index_dict)
 
         if new > 0:
-            self._update_index_log(index_name, new, pre_size, post_size, operation="add", source_file=source_file)
+            self._update_index_log(
+                index_name,
+                new,
+                pre_size,
+                post_size,
+                operation="add",
+                source_file=source_file,
+            )
 
         if self.verbose:
             print(f"#{new} items added to {index_name} index")
 
         return index_dict
 
-    def _update_index_log(self, index_name, num, pre_size, post_size, operation, source_file):
+    def _update_index_log(
+        self, index_name, num, pre_size, post_size, operation, source_file
+    ):
         """
         Log index updates (SNV or sample) in the HDF5 file.
 
-        This method records modifications to the index, including the number of new entries, 
+        This method records modifications to the index, including the number of new entries,
         operation type (e.g., "add"), and relevant metadata.
 
         Parameters
@@ -857,8 +868,16 @@ class DNAStream:
         timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S").encode("utf-8")
         user = getpass.getuser().encode("utf-8")
         hostname = socket.gethostname().encode("utf-8")
-        log[current_size] = (timestamp_str, num, pre_size, post_size, operation, user, hostname, source_file)
-
+        log[current_size] = (
+            timestamp_str,
+            num,
+            pre_size,
+            post_size,
+            operation,
+            user,
+            hostname,
+            source_file,
+        )
 
     def get_snv_data(self, indices=None):
         """
@@ -876,7 +895,6 @@ class DNAStream:
         """
         return self._get_data(dataset_name=f"{DNAStream.SNV}/data", indices=indices)
 
-
     def get_snv_log(self):
         """
         Retrieve the SNV index update log.
@@ -887,7 +905,6 @@ class DNAStream:
             A DataFrame containing log entries for SNV updates.
         """
         return self._get_data(dataset_name=f"{DNAStream.SNV}/log")
-
 
     def get_sample_log(self):
         """
@@ -927,7 +944,6 @@ class DNAStream:
         """
         return self._get_data(dataset_name=f"{DNAStream.SAMPLE}/data", indices=indices)
 
-
     def _get_data(self, dataset_name, indices=None):
         """
         Internal method to retrieve structured data from the HDF5 file.
@@ -950,7 +966,7 @@ class DNAStream:
         - If `indices` is provided, only the specified rows are retrieved.
         """
         dataset = self.file[dataset_name]
-        columns = dataset.attrs['columns']
+        columns = dataset.attrs["columns"]
 
         if indices is not None:
             dataset = dataset[indices, :]
@@ -962,10 +978,11 @@ class DNAStream:
         # Convert byte strings to UTF-8
         for col in df.select_dtypes(include=["object"]):
             if df[col].dtype == object:
-                df[col] = df[col].apply(lambda x: x.decode("utf-8") if isinstance(x, bytes) else x)
+                df[col] = df[col].apply(
+                    lambda x: x.decode("utf-8") if isinstance(x, bytes) else x
+                )
 
         return df
-
 
     def add_snv_data(self, indices, df, source_file=""):
         """
@@ -988,8 +1005,9 @@ class DNAStream:
         - The dataset is resized if necessary before adding data.
         - Uses structured NumPy arrays for efficient storage.
         """
-        self._add_data(indices, df, dataset_name=f"{DNAStream.SNV}/data", source_file=source_file)
-
+        self._add_data(
+            indices, df, dataset_name=f"{DNAStream.SNV}/data", source_file=source_file
+        )
 
     def add_sample_data(self, indices, df, source_file=""):
         """
@@ -1012,8 +1030,12 @@ class DNAStream:
         - The dataset is resized if necessary before adding data.
         - Uses structured NumPy arrays for efficient storage.
         """
-        self._add_data(indices, df, dataset_name=f"{DNAStream.SAMPLE}/data", source_file=source_file)
-
+        self._add_data(
+            indices,
+            df,
+            dataset_name=f"{DNAStream.SAMPLE}/data",
+            source_file=source_file,
+        )
 
     def _add_data(self, indices, df, dataset_name, source_file=""):
         """
@@ -1042,7 +1064,9 @@ class DNAStream:
         max_index = max(indices) + 1
         if dataset.shape[0] < max_index:
             self.file.close()
-            raise IndexError("Invalid indices passed to add_data method, check indices and try again")
+            raise IndexError(
+                "Invalid indices passed to add_data method, check indices and try again"
+            )
 
         # Convert df to structured array
         structured_data = np.zeros(len(indices), dtype=dataset.dtype)
@@ -1052,9 +1076,10 @@ class DNAStream:
         # Update data at provided indices
         dataset[indices] = structured_data
 
-        #log modifications 
-        self._log_dataset_modification(dataset_name, operation="update", source_file=source_file)
-
+        # log modifications
+        self._log_dataset_modification(
+            dataset_name, operation="update", source_file=source_file
+        )
 
     def _update_value(self, indices, dataset_name, col, value, source_file=""):
         """
@@ -1085,7 +1110,9 @@ class DNAStream:
         max_index = max(indices) + 1
         if dataset.shape[0] < max_index:
             self.file.close()
-            raise IndexError("Invalid indices passed to update_data method, check indices and try again")
+            raise IndexError(
+                "Invalid indices passed to update_data method, check indices and try again"
+            )
 
         # Read affected rows from HDF5 into memory
         temp_data = dataset[indices]  # Read only required rows
@@ -1095,14 +1122,15 @@ class DNAStream:
 
         # Write back only modified rows
         dataset[indices] = temp_data
-        self._log_dataset_modification(dataset_name, operation="update", source_file=source_file)
-   
+        self._log_dataset_modification(
+            dataset_name, operation="update", source_file=source_file
+        )
 
-    def add_maf_files(self, fnames, **kwargs)  :
+    def add_maf_files(self, fnames, **kwargs):
         """
         Add multiple MAF (Mutation Annotation Format) files to the SNV index and updates the index log.
 
-        This method iterates over a list of MAF file paths and processes each file 
+        This method iterates over a list of MAF file paths and processes each file
         using `add_maf_file`, updating the SNV index and data in the HDF5 dataset.
 
         Parameters
@@ -1120,17 +1148,37 @@ class DNAStream:
         for f in fnames:
             self.add_maf_file(f, **kwargs)
 
-
-    def add_maf_file(self, fname,
-                                 missing_values= ["Unknown", "Na", "N/A", "na", "nan", 
-                                                    "NaN", "NAN", "NONE", "None", "", "__UNKNOWN__"],
-                                 required_cols =["Hugo_Symbol", "Chromosome", "Start_Position", "End_Position",
-                                             "Reference_Allele", "Tumor_Seq_Allele2", "Entrez_Gene_Id"] ):
+    def add_maf_file(
+        self,
+        fname,
+        missing_values=[
+            "Unknown",
+            "Na",
+            "N/A",
+            "na",
+            "nan",
+            "NaN",
+            "NAN",
+            "NONE",
+            "None",
+            "",
+            "__UNKNOWN__",
+        ],
+        required_cols=[
+            "Hugo_Symbol",
+            "Chromosome",
+            "Start_Position",
+            "End_Position",
+            "Reference_Allele",
+            "Tumor_Seq_Allele2",
+            "Entrez_Gene_Id",
+        ],
+    ):
         """
         Add a single MAF (Mutation Annotation Format) file to the SNV index and updates the index log.
 
-        This function reads a MAF file, extracts SNV-related information, 
-        and adds it to the HDF5 dataset. If missing values or required columns 
+        This function reads a MAF file, extracts SNV-related information,
+        and adds it to the HDF5 dataset. If missing values or required columns
         are not present, they are handled accordingly.
 
         Parameters
@@ -1140,7 +1188,7 @@ class DNAStream:
         missing_values : list of str, optional
             A list of strings that should be treated as missing values (default includes common NA representations).
         required_cols : list of str, optional
-            A list of required column names that should be present in the MAF file 
+            A list of required column names that should be present in the MAF file
             (default includes standard MAF mutation columns).
 
         Raises
@@ -1154,60 +1202,55 @@ class DNAStream:
         - Any missing columns are added with `pd.NA` values.
         - SNV labels are created by concatenating the first four columns (chr:pos:ref:alt).
         - The extracted data is stored in the HDF5 file in a structured format.
-        """ 
+        """
 
-        #read MAF file and extract key info
-        maf = pd.read_table(fname, low_memory=False) 
-      
+        # read MAF file and extract key info
+        maf = pd.read_table(fname, low_memory=False)
+
         missing_cols = set(required_cols) - set(maf.columns)
 
         maf.replace(missing_values, pd.NA, inplace=True)
         if missing_cols:
-            maf = maf.reindex(columns=maf.columns.tolist() + list(missing_cols), fill_value=pd.NA)
-        
-        
-        
+            maf = maf.reindex(
+                columns=maf.columns.tolist() + list(missing_cols), fill_value=pd.NA
+            )
+
         maf["label"] = maf.iloc[:, :4].astype(str).agg(":".join, axis=1)
 
         column_dict = {
-            "label" : "label",
-            "Chromosome" : "chrom",
-            "Start_Position" : "pos",
-            "End_Position" : "end_pos",
-            "Reference_Allele" : "ref_allele",
-            "Tumor_Seq_Allele2" : "alt_allele",
-            "Hugo_Symbol" : "hugo",
-            "Entrez_Gene_Id": "gene"
+            "label": "label",
+            "Chromosome": "chrom",
+            "Start_Position": "pos",
+            "End_Position": "end_pos",
+            "Reference_Allele": "ref_allele",
+            "Tumor_Seq_Allele2": "alt_allele",
+            "Hugo_Symbol": "hugo",
+            "Entrez_Gene_Id": "gene",
         }
 
-        maf.rename(columns = column_dict, inplace=True)
+        maf.rename(columns=column_dict, inplace=True)
 
-    
-        snv_labels = maf["label"].tolist() 
+        snv_labels = maf["label"].tolist()
 
+        try:
 
-        try: 
+            snv_idx = self.batch_add_snvs(snv_labels, source_file=fname)
 
-         
-                snv_idx = self.batch_add_snvs(snv_labels, source_file=fname)
+            # sort dataframe according to the newly assigned indices in DNAStream
+            maf.loc[:, "snv_idx"] = maf["label"].map(snv_idx)
+            maf = maf.sort_values("snv_idx")
+            indices = maf["snv_idx"].tolist()
+            snv_data = maf[[val for _, val in column_dict.items()]]
 
-                #sort dataframe according to the newly assigned indices in DNAStream
-                maf.loc[:,"snv_idx"] = maf["label"].map(snv_idx) 
-                maf = maf.sort_values("snv_idx")
-                indices = maf["snv_idx"].tolist()
-                snv_data = maf[[val for _, val in column_dict.items()]]
-              
-      
-                self.add_snv_data(indices, snv_data, source_file=fname)
-
+            self.add_snv_data(indices, snv_data, source_file=fname)
 
         except Exception as e:
-       
+
             self.close()
             raise Exception(e)
 
     @staticmethod
-    def _parse_file(fname, sep_word='tree', nskip=0, sep="\t"):
+    def _parse_file(fname, sep_word="tree", nskip=0, sep="\t"):
         """
         Parses a text file containing multiple edge lists of trees.
         @param fname: str filename to be parsed
@@ -1215,8 +1258,8 @@ class DNAStream:
         @param nksip: int number of rows to skip before parsing
         """
         tree_list = []
-        with open(fname, 'r+') as file:
-            new_tree = None 
+        with open(fname, "r+") as file:
+            new_tree = None
             for idx, line in enumerate(file):
                 if idx < nskip:
                     continue
@@ -1226,21 +1269,21 @@ class DNAStream:
                     new_tree = []
 
                 else:
-                    edge = [ int(e) for e in line.strip().split(sep)]
-                    new_tree.append((edge[0], edge[1])) 
+                    edge = [int(e) for e in line.strip().split(sep)]
+                    new_tree.append((edge[0], edge[1]))
             if new_tree:
                 tree_list.append(new_tree)
-   
+
         return tree_list, None
 
-    def _add_tree(self,  edge_list,  tree_type,data=None, index=None):
-       
+    def _add_tree(self, edge_list, tree_type, data=None, index=None):
+
         trees = self.file[f"{DNAStream.TREE}/{tree_type}_trees"]
         save = False
         if index is None:
             index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees")
             save = True
-   
+
         numtrees = len(index)
         new_size = numtrees + 1
 
@@ -1248,18 +1291,17 @@ class DNAStream:
             if key != "index":
                 trees[key].resize((new_size,))
         label = f"tree{numtrees}"
-        index[f"tree{numtrees}"] =numtrees
+        index[f"tree{numtrees}"] = numtrees
 
         if save:
             self._save_index(index, f"{DNAStream.TREE}/{tree_type}_tree")
-       
-     
-        trees["trees"][numtrees] =np.array(edge_list, dtype=EDGE_LIST_DTYPE)
-        
+
+        trees["trees"][numtrees] = np.array(edge_list, dtype=EDGE_LIST_DTYPE)
+
         if data:
             data["label"] = label
-            trees["data"][numtrees] = data  
-    
+            trees["data"][numtrees] = data
+
     def _search_data_by_filename(self, dataset_name, fname):
         """
         Search for rows in a dataset where the "file" column matches a given filename.
@@ -1283,16 +1325,17 @@ class DNAStream:
         return []
 
     def _check_safe(self, dataset_name, source_file):
-            indices = self._search_data_by_filename(dataset_name, source_file)
-            if len(indices) > 0:
-      
-                if self.verbose:
-                    print(f"#Warning! Entries already exist from {source_file} in '{dataset_name}'")
-                  
-                return False
-            else:
-                return True
-       
+        indices = self._search_data_by_filename(dataset_name, source_file)
+        if len(indices) > 0:
+
+            if self.verbose:
+                print(
+                    f"#Warning! Entries already exist from {source_file} in '{dataset_name}'"
+                )
+
+            return False
+        else:
+            return True
 
     def add_trees_from_file(self, fname, tree_type="SNV", method="", safe=True):
         """
@@ -1327,10 +1370,10 @@ class DNAStream:
             dataset_name = f"{DNAStream.TREE}/{tree_type}_trees/data"
 
             if safe and not self._check_safe(dataset_name, source_file):
-                print("#Warning! Attempting overwrite in Safe mode, use safe=F, to force append trees.")
-                return 
-
- 
+                print(
+                    "#Warning! Attempting overwrite in Safe mode, use safe=F, to force append trees."
+                )
+                return
 
             tree_index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees")
             print("Parsing file...")
@@ -1341,17 +1384,25 @@ class DNAStream:
                 tree_list, scores = self._parse_file(fname, nskip=1, sep=" ")
 
             data_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["data"]
-          
+
             for i, edge_list in enumerate(tree_list):
                 if scores is None:
-                    dat = np.array([("", method, np.nan, i, source_file)], dtype=data_dtype)
+                    dat = np.array(
+                        [("", method, np.nan, i, source_file)], dtype=data_dtype
+                    )
                 else:
-                    dat = np.array([("", method, scores[i], i, source_file)], dtype=data_dtype)
+                    dat = np.array(
+                        [("", method, scores[i], i, source_file)], dtype=data_dtype
+                    )
 
                 self._add_tree(edge_list, tree_type, data=dat, index=tree_index)
 
             self._save_index(tree_index, f"{DNAStream.TREE}/{tree_type}_trees")
-            self._log_dataset_modification(f"{DNAStream.TREE}/{tree_type}_trees", operation="update", source_file=fname)
+            self._log_dataset_modification(
+                f"{DNAStream.TREE}/{tree_type}_trees",
+                operation="update",
+                source_file=fname,
+            )
 
             if self.verbose:
                 print(f"#{len(tree_list)} {tree_type} trees added from {method}.")
@@ -1360,8 +1411,9 @@ class DNAStream:
             self.close()
             raise Exception(e)
 
-
-    def add_snv_tree_from_edge_list(self, edge_list, method="", score=np.nan, rank=np.nan):
+    def add_snv_tree_from_edge_list(
+        self, edge_list, method="", score=np.nan, rank=np.nan
+    ):
         """
         Add an SNV tree from an edge list to the dataset.
 
@@ -1387,9 +1439,7 @@ class DNAStream:
         self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
 
     def add_pyclone_file(self, fname):
-        pass 
-
-
+        pass
 
     def close(self):
         """
@@ -1397,9 +1447,7 @@ class DNAStream:
 
         This should be called when finished working with the DNAStream object.
         """
-      
+
         self.file.close()
         if self.verbose:
             print(f"#Stream to connection {self.filename} closed.")
-
-
