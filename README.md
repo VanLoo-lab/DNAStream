@@ -51,14 +51,16 @@ Verify the installation.
 python -c "from dnastream import DNAStream"
 ```
 
- Packing is ready to use if no errors occurred. 
+ Packaage is ready to use if no errors occurred!
 
 
  ## Tutorial
 
 
 ### Initializing DNAStream
- Import and initialize a DNAStream.
+ Import and initialize a DNAStream object by specifying an HDF5 filename. If the file does not exist, empty datasets
+ are created from the [schema](#schema-under-development). If the file exists, a connection is established to the file 
+ for streaming. 
  ```python
 #create a DNAStream object and corresponding HFD5 file
 from dnastream import DNAStream
@@ -72,14 +74,15 @@ ds = DNAStream("myfile.h5", verbose=True)
 Add SNVs to index and associated metadata from a MAF file(s).
 ```python
 #add SNVs to index and associated metadata with 
-maf_file = "path/to/favorite/maf/file"
-ds.add_maf_file(maf_file)
-
+maf_file1 = "path/to/favorite/maf/file1.ma"
+ds.add_maf_file(maf_file1)
+maf_file2 = "path/to/favorite/maf/file2.maf"
 #add a list of maf files
-my_maf_files = [maf_file, maf_file]
+my_maf_files = [maf_file1, maf_file1]
 ds.add_maf_file(my_maf_files)
-#DNAStream won't add duplicate SNVs (chr:pos:ref:alt) to the index. 
+
  ```
+ DNAStream won't add duplicate SNVs (chr:pos:ref:alt) to the index although SNV metadata will be updated at the existing indices.
 
 ### Adding Read Counts
 Add read counts for single-cell data
