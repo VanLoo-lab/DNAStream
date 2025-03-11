@@ -79,7 +79,7 @@ ds.add_maf_file(maf_file1)
 maf_file2 = "path/to/favorite/maf/file2.maf"
 #add a list of maf files
 my_maf_files = [maf_file1, maf_file1]
-ds.add_maf_file(my_maf_files)
+ds.add_maf_files(my_maf_files)
 
  ```
  DNAStream won't add duplicate SNVs (chr:pos:ref:alt) to the index although SNV metadata will be updated at the existing indices.
