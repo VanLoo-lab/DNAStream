@@ -17,7 +17,7 @@ META_TABLES = ["data", "label", "cluster", "index", "log"]
 
 
 READ_COUNTS = {
-    f"read_counts/{m}/{c}": "i" for c in ["variant", "total"] for m in MODALITIES
+    f"read_counts/{c}": "i" for c in ["variant", "total"]
 }
 
 SCHEMA = {

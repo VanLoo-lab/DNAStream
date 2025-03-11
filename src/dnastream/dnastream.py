@@ -1441,6 +1441,103 @@ class DNAStream:
     def add_pyclone_file(self, fname):
         pass
 
+
+    def _extract_indices_by_column(self, dataset_name, name, values):
+        vals = self.file[dataset_name][name][:]  # Load the column data
+        indices = np.where(np.isin(vals, values))[0]  # Get matching indices
+        return indices
+    
+    def load_indices(self):
+        """
+        Wrapper to return both SNV and sample indices as dictionaries
+        """
+        return self.load_snv_index(), self.load_sample_index()
+    
+    def _extract_data(self, dataset_name, snv_indices=None, sample_indices=None):
+        """
+        Extracts a subset of the dataset based on SNV and sample indices.
+
+        Parameters
+        ----------
+        dataset_name : str
+            The HDF5 dataset name.
+        snv_indices : list or array-like, optional
+            Indices of SNVs to extract. If None, selects all SNVs.
+        sample_indices : list or array-like, optional
+            Indices of samples to extract. If None, selects all samples.
+
+        Returns
+        -------
+        np.ndarray
+            A NumPy array containing the extracted data.
+        """
+
+        if snv_indices and sample_indices:
+           arr =  self.file[dataset_name][snv_indices, :]
+           return arr[:,sample_indices]
+        elif snv_indices:
+            return self.file[dataset_name][snv_indices]
+        elif sample_indices:
+            return self.file[dataset_name][:, sample_indices]
+        else:
+            return self.file[dataset_name][:]
+
+
+    def extract_read_counts(self, tables=["variant", "total"], sources=None, snv_labels=None, 
+                             snv_indices=None, sample_labels=None, sample_indices=None):
+        """
+        Extracts read count data from the HDF5 file based on SNV/sample labels or indices.
+
+        Parameters
+        ----------
+        tables : list of str, optional
+            List of table types to extract. Default is ["variant", "total"].
+        sources : list of str, optional
+            Sample sources to filter by.
+        snv_labels : list of str, optional
+            Labels of SNVs to extract.
+        snv_indices : list or array-like, optional
+            Precomputed indices of SNVs.
+        sample_labels : list of str, optional
+            Labels of samples to extract.
+        sample_indices : list or array-like, optional
+            Precomputed indices of samples.
+
+        Returns
+        -------
+        dict of {str: np.ndarray}
+            A dictionary mapping table names to their extracted NumPy arrays.
+        """
+        
+        snv_idx, sample_idx = self.load_indices()
+        if snv_labels:
+    
+            snv_indices = [snv_idx[l] for l in snv_labels]
+           
+    
+      
+        if sources is not None:
+            sample_indices = self._extract_indices_by_column("sample/data", "source", sources)
+        elif sample_labels is not None:
+         
+            sample_indices = [sample_idx[l] for l in sample_labels]
+      
+        
+        
+
+        return  {table: self._extract_data(f"read_counts/{table}", snv_indices, sample_indices) for table in tables}
+
+        
+
+
+            
+  
+            
+        
+
+        
+
+
     def close(self):
         """
         Close the HDF5 file safely.
