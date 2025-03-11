@@ -6,7 +6,7 @@ from dnastream import DNAStream
 # Test data paths (modify as needed)
 RC_PATH = "/rsrch6/home/genetics/vanloolab/llweber/MPNST/scdna/read_counts"
 MAF_FILES = [
-    f"../data_summary/WGS_MUTATION/Somatic/2outof3_SNV/GEM2.2_PT_{i}_SNVs_2outof3.maf"
+    f"/rsrch6/home/genetics/vanloolab/llweber/data_summary/WGS_MUTATION/Somatic/2outof3_SNV/GEM2.2_PT_{i}_SNVs_2outof3.maf"
     for i in range(2, 6)
 ]
 READ_COUNT_FILE = f"{RC_PATH}/GEM2.2.csv"
@@ -57,7 +57,6 @@ def test_log_retrieval(temp_h5_file):
     ds = DNAStream(filename=temp_h5_file, verbose=True)
     ds.add_maf_files(MAF_FILES)
     ds.add_read_counts(READ_COUNT_FILE, source="scdna")
-    print("here")
     snv_log = ds.get_snv_log()
     sample_log = ds.get_sample_log()
 
@@ -77,21 +76,23 @@ def test_dnastream_cleanup(temp_h5_file):
 
 def test_add_snv_trees(temp_h5_file):
     ds = DNAStream(filename=temp_h5_file, verbose=True)
-    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher", safe=True)
+    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
     tree_dat = ds._get_data("tree/SNV_trees/data")
     assert tree_dat.shape[0] > 0
     numtrees = tree_dat.shape[0]
     # test safe mode
-    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher", safe=True)
+    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
     tree_dat = ds._get_data("tree/SNV_trees/data")
     assert tree_dat.shape[0] == numtrees
 
     # test force append
-    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher", safe=False)
+    ds.safe_mode_disable()
+    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
     tree_dat = ds._get_data("tree/SNV_trees/data")
     assert tree_dat.shape[0] == numtrees * 2
 
     # test sapling
-    ds.add_trees_from_file(SAPLING, tree_type="SNV", method="sapling", safe=True)
+    ds.safe_mode_enable()
+    ds.add_trees_from_file(SAPLING, tree_type="SNV", method="sapling")
     tree_dat = ds._get_data("tree/SNV_trees/data")
     assert tree_dat.shape[0] > numtrees * 2

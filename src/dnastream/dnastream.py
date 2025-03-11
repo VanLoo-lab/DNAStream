@@ -158,7 +158,7 @@ class DNAStream:
         """Initialize HDF5 storage."""
         self.filename = filename
         self.verbose = verbose
-        self.safe = safe 
+        self.safe = safe
 
         self.file = h5py.File(filename, "a")  # Append mode (does not overwrite)
         if self.verbose:
@@ -194,9 +194,9 @@ class DNAStream:
                 self.set_patient_sex("")
 
         if not self.safe and id:
-                self.set_patient_id(id)
+            self.set_patient_id(id)
         if not self.safe and sex:
-                self.set_patient_sex(sex)
+            self.set_patient_sex(sex)
 
     def __str__(self):
         """To string method"""
@@ -208,20 +208,18 @@ class DNAStream:
         mystr += f"\nPatient: {self.file.attrs['id']}, sex: {self.file.attrs['sex']}"
 
         return mystr
-    
+
     def set_patient_id(self, id):
-         self.file.attrs["id"] = id
-    
+        self.file.attrs["id"] = id
+
     def get_patient_id(self):
-         return self.file.attrs.get("id", None)
-    
+        return self.file.attrs.get("id", None)
+
     def set_patient_sex(self, sex):
-         self.file.attrs["sex"] = sex
-    
+        self.file.attrs["sex"] = sex
+
     def get_patient_sex(self):
-         return self.file.attrs.get("sex", None)
-    
-    
+        return self.file.attrs.get("sex", None)
 
     def _recursive_build(self, schema, path=""):
         """
@@ -255,7 +253,7 @@ class DNAStream:
                         compression="gzip",
                         columns=columns,
                     )
-    
+
     def add_dataset_to_file(
         self,
         path,
@@ -330,11 +328,10 @@ class DNAStream:
         """
         Switches DNAStream into safe mode.
         """
-        self.safe = True 
+        self.safe = True
 
-    
     def safe_mode_disable(self):
-        self.safe = False 
+        self.safe = False
 
     @timeit
     def add_read_counts(self, fname, source, location=None):
@@ -401,7 +398,7 @@ class DNAStream:
             total_counts = total_counts[sorted_order]
 
             # Update dataset in batch instead of looping
-            dat = self.file[f"read_counts/{source}"]
+            dat = self.file[f"read_counts"]
             unique_snv_indices = np.unique(snv_indices_arr)  # Get unique SNV indices
 
             for snv in unique_snv_indices:
@@ -411,14 +408,14 @@ class DNAStream:
 
             for arr in ["variant", "total"]:
                 self._log_dataset_modification(
-                    f"read_counts/{source}/{arr}", operation="update", source_file=fname
+                    f"read_counts/{arr}", operation="update", source_file=fname
                 )
 
         except Exception as e:
             self.close()
             raise Exception(e)
 
-    def _add_read_count(self, source, snv_idx, sample_idx, var=0, total=0):
+    def _add_read_count(self, snv_idx, sample_idx, var=0, total=0):
         """
         Internal function to add a single read count entry. Currently not used.
 
@@ -436,7 +433,7 @@ class DNAStream:
             Total read count (default is 0).
         """
 
-        dat = self.file[f"read_counts/{source}"]
+        dat = self.file[f"read_counts"]
         dat["variant"][snv_idx, sample_idx] = var
         dat["total"][snv_idx, sample_idx] = total
 
@@ -561,7 +558,6 @@ class DNAStream:
         else:
             n = self.file[f"{DNAStream.SAMPLE}/label"].shape[0]
 
-    
         group_path = "read_counts"
         for reads in ["variant", "total"]:
 
@@ -847,9 +843,9 @@ class DNAStream:
             labels[np.argsort(indices)].tolist(),
             indices[np.argsort(indices)].tolist(),
         )
-        print(index_name)
+
         if self.file[f"{index_name}/label"].shape[0] != len(index_dict):
-  
+
             if index_name == DNAStream.SNV:
                 self._resize_all(m=len(index_dict))
             if index_name == DNAStream.SAMPLE:

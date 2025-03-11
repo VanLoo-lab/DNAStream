@@ -16,9 +16,7 @@ STRUCT_ARRAYS = ["log", "data"]
 META_TABLES = ["data", "label", "cluster", "index", "log"]
 
 
-READ_COUNTS = {
-    f"read_counts/{c}": "i" for c in ["variant", "total"]
-}
+READ_COUNTS = {f"read_counts/{c}": "i" for c in ["variant", "total"]}
 
 SCHEMA = {
     "metadata": {"log": DATASET_LOG_DTYPE},
