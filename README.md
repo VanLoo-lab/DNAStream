@@ -74,7 +74,7 @@ ds = DNAStream("myfile.h5", verbose=True)
 Add SNVs to index and associated metadata from a MAF file(s).
 ```python
 #add SNVs to index and associated metadata with 
-maf_file1 = "path/to/favorite/maf/file1.ma"
+maf_file1 = "path/to/favorite/maf/file1.maf"
 ds.add_maf_file(maf_file1)
 maf_file2 = "path/to/favorite/maf/file2.maf"
 #add a list of maf files
