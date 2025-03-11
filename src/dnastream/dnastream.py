@@ -152,10 +152,13 @@ class DNAStream:
     INDICES = [SNV, SAMPLE]
     TREES = [SNV, CNA, CLONAL]
 
-    def __init__(self, filename, initialize=True, verbose=False):
+    def __init__(
+        self, filename, initialize=True, verbose=False, id=None, sex=None, safe=True
+    ):
         """Initialize HDF5 storage."""
         self.filename = filename
         self.verbose = verbose
+        self.safe = safe 
 
         self.file = h5py.File(filename, "a")  # Append mode (does not overwrite)
         if self.verbose:
@@ -180,6 +183,21 @@ class DNAStream:
                 self.file[key].dims[0].label = DNAStream.SNV
                 self.file[key].dims[1].label = DNAStream.SAMPLE
 
+            if id:
+                self.set_patient_id(id)
+            else:
+                self.set_patient_id("")
+
+            if sex:
+                self.set_patient_sex(sex)
+            else:
+                self.set_patient_sex("")
+
+        if not self.safe and id:
+                self.set_patient_id(id)
+        if not self.safe and sex:
+                self.set_patient_sex(sex)
+
     def __str__(self):
         """To string method"""
         m = self.file[f"{DNAStream.SNV}/label"].shape[0]
@@ -187,8 +205,23 @@ class DNAStream:
 
         mystr = f"DNAStream object with {m} SNVs and {n} samples"
         mystr += f"\nHDF5 File: {self.filename}"
+        mystr += f"\nPatient: {self.file.attrs['id']}, sex: {self.file.attrs['sex']}"
 
         return mystr
+    
+    def set_patient_id(self, id):
+         self.file.attrs["id"] = id
+    
+    def get_patient_id(self):
+         return self.file.attrs.get("id", None)
+    
+    def set_patient_sex(self, sex):
+         self.file.attrs["sex"] = sex
+    
+    def get_patient_sex(self):
+         return self.file.attrs.get("sex", None)
+    
+    
 
     def _recursive_build(self, schema, path=""):
         """
@@ -222,7 +255,7 @@ class DNAStream:
                         compression="gzip",
                         columns=columns,
                     )
-
+    
     def add_dataset_to_file(
         self,
         path,
@@ -292,6 +325,16 @@ class DNAStream:
             hostname,
             source_file,
         )
+
+    def safe_mode_enable(self):
+        """
+        Switches DNAStream into safe mode.
+        """
+        self.safe = True 
+
+    
+    def safe_mode_disable(self):
+        self.safe = False 
 
     @timeit
     def add_read_counts(self, fname, source, location=None):
@@ -518,12 +561,12 @@ class DNAStream:
         else:
             n = self.file[f"{DNAStream.SAMPLE}/label"].shape[0]
 
-        for modality in MODALITIES:
-            group_path = f"read_counts/{modality}"
-            for reads in ["variant", "total"]:
+    
+        group_path = "read_counts"
+        for reads in ["variant", "total"]:
 
-                mat = self.file[f"{group_path}/{reads}"]
-                mat.resize((m, n))
+            mat = self.file[f"{group_path}/{reads}"]
+            mat.resize((m, n))
 
     def add_snv(self, label, cluster=None, data=None, overwrite=False):
         """
@@ -804,8 +847,9 @@ class DNAStream:
             labels[np.argsort(indices)].tolist(),
             indices[np.argsort(indices)].tolist(),
         )
-
+        print(index_name)
         if self.file[f"{index_name}/label"].shape[0] != len(index_dict):
+  
             if index_name == DNAStream.SNV:
                 self._resize_all(m=len(index_dict))
             if index_name == DNAStream.SAMPLE:
@@ -1337,7 +1381,7 @@ class DNAStream:
         else:
             return True
 
-    def add_trees_from_file(self, fname, tree_type="SNV", method="", safe=True):
+    def add_trees_from_file(self, fname, tree_type="SNV", method=""):
         """
         Add phylogenetic trees from a file to the HDF5 dataset.
 
@@ -1369,7 +1413,7 @@ class DNAStream:
 
             dataset_name = f"{DNAStream.TREE}/{tree_type}_trees/data"
 
-            if safe and not self._check_safe(dataset_name, source_file):
+            if self.safe and not self._check_safe(dataset_name, source_file):
                 print(
                     "#Warning! Attempting overwrite in Safe mode, use safe=F, to force append trees."
                 )
@@ -1441,18 +1485,17 @@ class DNAStream:
     def add_pyclone_file(self, fname):
         pass
 
-
     def _extract_indices_by_column(self, dataset_name, name, values):
         vals = self.file[dataset_name][name][:]  # Load the column data
         indices = np.where(np.isin(vals, values))[0]  # Get matching indices
         return indices
-    
+
     def load_indices(self):
         """
         Wrapper to return both SNV and sample indices as dictionaries
         """
         return self.load_snv_index(), self.load_sample_index()
-    
+
     def _extract_data(self, dataset_name, snv_indices=None, sample_indices=None):
         """
         Extracts a subset of the dataset based on SNV and sample indices.
@@ -1473,8 +1516,8 @@ class DNAStream:
         """
 
         if snv_indices and sample_indices:
-           arr =  self.file[dataset_name][snv_indices, :]
-           return arr[:,sample_indices]
+            arr = self.file[dataset_name][snv_indices, :]
+            return arr[:, sample_indices]
         elif snv_indices:
             return self.file[dataset_name][snv_indices]
         elif sample_indices:
@@ -1482,9 +1525,15 @@ class DNAStream:
         else:
             return self.file[dataset_name][:]
 
-
-    def extract_read_counts(self, tables=["variant", "total"], sources=None, snv_labels=None, 
-                             snv_indices=None, sample_labels=None, sample_indices=None):
+    def extract_read_counts(
+        self,
+        tables=["variant", "total"],
+        sources=None,
+        snv_labels=None,
+        snv_indices=None,
+        sample_labels=None,
+        sample_indices=None,
+    ):
         """
         Extracts read count data from the HDF5 file based on SNV/sample labels or indices.
 
@@ -1508,35 +1557,26 @@ class DNAStream:
         dict of {str: np.ndarray}
             A dictionary mapping table names to their extracted NumPy arrays.
         """
-        
+
         snv_idx, sample_idx = self.load_indices()
         if snv_labels:
-    
+
             snv_indices = [snv_idx[l] for l in snv_labels]
-           
-    
-      
+
         if sources is not None:
-            sample_indices = self._extract_indices_by_column("sample/data", "source", sources)
+            sample_indices = self._extract_indices_by_column(
+                "sample/data", "source", sources
+            )
         elif sample_labels is not None:
-         
+
             sample_indices = [sample_idx[l] for l in sample_labels]
-      
-        
-        
 
-        return  {table: self._extract_data(f"read_counts/{table}", snv_indices, sample_indices) for table in tables}
-
-        
-
-
-            
-  
-            
-        
-
-        
-
+        return {
+            table: self._extract_data(
+                f"read_counts/{table}", snv_indices, sample_indices
+            )
+            for table in tables
+        }
 
     def close(self):
         """
