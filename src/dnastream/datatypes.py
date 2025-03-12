@@ -1,3 +1,4 @@
+# Description: This file contains the definition of the custom datatypes used in the DNAStream package.
 import h5py
 import numpy as np
 
@@ -68,3 +69,7 @@ DATASET_LOG_DTYPE = np.dtype(
         ("file", STR_DTYPE),  # source file
     ]
 )
+
+SEGMENT_LABEL_DTYPE = np.dtype([("chrom", "S5"), ("start", "i8"), ("end", "i8")])
+
+ALLELE_SPECIFIC_CN_DTYPE = np.dtype([("x", "i4"), ("y", "i4"), ("proportion", "f4")])

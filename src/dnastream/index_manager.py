@@ -69,6 +69,7 @@ class BaseIndex:
                 self._modified = True  # Mark dataset as modified
 
         self._save_index()  # Save if modified
+        return {label: self._index_cache[label] for label in labels}
 
     def get_labels(self):
         """Return the list of labels."""
@@ -107,7 +108,26 @@ class BaseIndex:
         """
         return [self._index_cache.get(label, None) for label in labels]
 
+    def allocate_labels(self, num, prefix=None ):
+        """
+        Allocate a block of labels.
 
+        Parameters
+        ----------
+        num : int
+            The number of labels to allocate.       
+
+        Returns
+        -------
+        list of int
+            List of indices for the allocated labels.
+        """
+        if not prefix:
+            prefix = self.table
+        new_idx = self.size()
+        labels = [f"{prefix}_{i}" for i in range(new_idx, new_idx + num)]
+        return self.add_labels(labels)
+    
 class GlobalIndex(BaseIndex):
     """Handles global indices (SNV, sample)."""
     

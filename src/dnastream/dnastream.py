@@ -10,8 +10,9 @@ import pandas as pd
 import h5py
 import numpy as np
 import json
+from .index_manager import BaseIndex, GlobalIndex
 
-from .schema import SCHEMA, STRUCT_ARRAYS, META_TABLES, MODALITIES, READ_COUNTS
+from .schema import SCHEMA, STRUCT_ARRAYS, META_TABLES, MODALITIES
 from .datatypes import EDGE_LIST_DTYPE
 
 # TODO
@@ -51,11 +52,14 @@ from .datatypes import EDGE_LIST_DTYPE
  |   |     |-- sample assignment (*)
  |   |    
  |-- copy_number/ (*)
- |   ├── /bulk/
- |   │   ├── /segments    # Bulk-specific segment index
- |   │   ├── /profiles       # Tensor: (sample, segment, allele CN, proportion μ)
- |   │   ├── /metadata    # Bulk-specific metadata
- |   |   |-- /log          # logging
+ |   ├── /scdna/
+ |   │   ├── index    # Bulk-specific segment index
+ |   │   ├── profiles       # 3d array of ints (segment, sample, allele)
+ |   |   |-- logr              # 2d of floats  (segment, sample)
+ |   |   |-- baf              # 2d of floats (segment, sample)
+ |   |   |-- raw            
+ |   │   ├── data    # source-specific metadata
+ |   |   |-- log          # logging
  |   │
  |   ├── /single_cell/
  |   │   ├── /segments    # Single-cell segment index
@@ -149,7 +153,10 @@ class DNAStream:
     CNA = "CNA"
     CLONAL = "clonal"
 
-    INDICES = [SNV, SAMPLE]
+    TREE_TYPES = ["SNV", "CNA", "clonal"]
+
+    GLOBAL_INDICES = [SNV, SAMPLE]
+    LOCAL_INDICES = [f"tree/_{ttype}_trees"  for ttype in TREE_TYPES] + [f"copy_number/{mod}" for mod in MODALITIES]
     TREES = [SNV, CNA, CLONAL]
 
     def __init__(
@@ -170,28 +177,31 @@ class DNAStream:
         if initialize:
             self._recursive_build(SCHEMA)
 
+        self.global_idx = {name: GlobalIndex(self.file, name) for name in DNAStream.GLOBAL_INDICES}
+        self.local_idx = {name: BaseIndex(self.file, name) for name in DNAStream.LOCAL_INDICES}
             # Create group structure for read counts
-            for key, dtype in READ_COUNTS.items():
-                self.add_dataset_to_file(
-                    key,
-                    shape=(0, 0),
-                    maxshape=(None, None),
-                    dtype=dtype,
-                    compression="gzip",
-                    chunks=(1, 5000),
-                )
-                self.file[key].dims[0].label = DNAStream.SNV
-                self.file[key].dims[1].label = DNAStream.SAMPLE
+            # for key, _ in READ_COUNTS.items():
+            #     # self.add_dataset_to_file(
+            #     #     key,
+            #     #     shape=(0, 0),
+            #     #     maxshape=(None, None),
+            #     #     dtype=dtype,
+            #     #     compression="gzip",
+            #     #     chunks=(1, 5000),
+            #     # )
+            #TODO: add dim labels 
+            #     self.file[key].dims[0].label = DNAStream.SNV
+            #     self.file[key].dims[1].label = DNAStream.SAMPLE
 
-            if id:
-                self.set_patient_id(id)
-            else:
-                self.set_patient_id("")
+        if id:
+            self.set_patient_id(id)
+        else:
+            self.set_patient_id("")
 
-            if sex:
-                self.set_patient_sex(sex)
-            else:
-                self.set_patient_sex("")
+        if sex:
+            self.set_patient_sex(sex)
+        else:
+            self.set_patient_sex("")
 
         if not self.safe and id:
             self.set_patient_id(id)
@@ -233,26 +243,23 @@ class DNAStream:
             The current path in the HDF5 hierarchy, used for recursive traversal.
         """
         if isinstance(schema, dict):
-            for key, datasets in schema.items():
-                new_path = f"{path}/{key}" if path else key  # Handle root case
+            for key, value in schema.items():
+                new_path = f"{path}/{key}" if path else key  # Construct the HDF5 path
 
-                if isinstance(datasets, dict):  # If it's another dictionary, recurse
-                    self._recursive_build(datasets, new_path)
-                else:  # If it's a dataset, create it
-                    dtype = datasets  # Since `datasets` holds dtype here
-
-                    columns = []
-                    if key in STRUCT_ARRAYS:
-                        columns = list(dtype.names)  # Get column names from dtype
-
+                if isinstance(value, dict) and "dtype" in value:  
+                    # Base case: value holds dataset initialization specs
                     self.add_dataset_to_file(
                         new_path,
-                        shape=(0,),
-                        maxshape=(None,),
-                        dtype=dtype,
+                        dtype=value["dtype"],
+                        shape=value.get("shape", (0,)), 
+                        maxshape=value.get("maxshape", (None,)),  
+                        chunks=value.get("chunks", None),  # Apply chunking if defined
                         compression="gzip",
-                        columns=columns,
+                        columns=list(value["dtype"].names) if key in STRUCT_ARRAYS else [],
                     )
+                else:
+                    # Recursive case: value is a nested dictionary, keep traversing until dtypes is among keys
+                    self._recursive_build(value, new_path)
 
     def add_dataset_to_file(
         self,
@@ -469,63 +476,63 @@ class DNAStream:
         """
         return self._idx_by_label(label, index_name=DNAStream.SAMPLE)
 
-    def _idx_by_label(self, label, index_name):
-        """
-        Internal function to retrieve the index from a label.
+    # def _idx_by_label(self, label, index_name):
+    #     """
+    #     Internal function to retrieve the index from a label.
 
-        Parameters
-        ----------
-        label : str
-            Label to look up.
-        index_name : str
-            Name of the index to use.
-
-
-        Returns
-        -------
-        int or None
-            Index if found, else None.
-        """
-        labs = self.file[f"{index_name}/label"]
-
-        if len(labs) == 0:
-            return None
-
-        indices = np.where(labs[:] == label)[0]
-        if len(indices) == 0:
-            return None
-        elif len(indices) == 1:
-            return indices[0]
-        else:
-            self.close()
-            raise ValueError(
-                "label is associated with multiple indices and could not be added."
-            )
-
-    def _label_by_idx(self, idx, index_name):
-        """
-        Internal function to label the index from an index.
-
-        Parameters
-        ----------
-        idx : int
-            index to look up.
-        index_name : str
-            Name of the index to use.
+    #     Parameters
+    #     ----------
+    #     label : str
+    #         Label to look up.
+    #     index_name : str
+    #         Name of the index to use.
 
 
-        Returns
-        -------
-        str
-            label if found
-        """
-        try:
-            label = self.file[f"{index_name}/label"][idx]
-        except Exception as e:
-            self.close()
-            raise Exception(e)
+    #     Returns
+    #     -------
+    #     int or None
+    #         Index if found, else None.
+    #     """
+    #     labs = self.file[f"{index_name}/label"]
 
-        return label
+    #     if len(labs) == 0:
+    #         return None
+
+    #     indices = np.where(labs[:] == label)[0]
+    #     if len(indices) == 0:
+    #         return None
+    #     elif len(indices) == 1:
+    #         return indices[0]
+    #     else:
+    #         self.close()
+    #         raise ValueError(
+    #             "label is associated with multiple indices and could not be added."
+    #         )
+
+    # def _label_by_idx(self, idx, index_name):
+    #     """
+    #     Internal function to label the index from an index.
+
+    #     Parameters
+    #     ----------
+    #     idx : int
+    #         index to look up.
+    #     index_name : str
+    #         Name of the index to use.
+
+
+    #     Returns
+    #     -------
+    #     str
+    #         label if found
+    #     """
+    #     try:
+    #         label = self.file[f"{index_name}/label"][idx]
+    #     except Exception as e:
+    #         self.close()
+    #         raise Exception(e)
+
+    #     return label
 
     def _resize_all(self, m=None, n=None):
         """
@@ -547,7 +554,7 @@ class DNAStream:
 
                 self.file[group_path].resize((m,))
         else:
-            m = self.file[f"{DNAStream.SNV}/label"].shape[0]
+            m = self.global_idx["SNV"].size() 
 
         if n:
             for sample_data in META_TABLES:
@@ -556,7 +563,7 @@ class DNAStream:
                 group_path = f"{DNAStream.SAMPLE}/{sample_data}"
                 self.file[group_path].resize((n,))
         else:
-            n = self.file[f"{DNAStream.SAMPLE}/label"].shape[0]
+            n = self.global_idx["sample"].size() 
 
         group_path = "read_counts"
         for reads in ["variant", "total"]:
@@ -689,7 +696,7 @@ class DNAStream:
         dict
             A dictionary mapping SNV labels to their respective indices.
         """
-        return self._load_index(DNAStream.SNV)
+        return self.global_idx[DNAStream.SNV].get_index()
 
     def load_sample_index(self):
         """
@@ -700,68 +707,9 @@ class DNAStream:
         dict
             A dictionary mapping sample labels to their respective indices.
         """
-        return self._load_index(DNAStream.SAMPLE)
+        return self.global_idx[DNAStream.SNV].get_index()
 
-    def save_snv_index(self, index_dict):
-        """
-        Save the SNV index to the HDF5 file.
 
-        Parameters
-        ----------
-        index_dict : dict
-            Dictionary mapping SNV labels to their respective indices.
-        """
-        return self._save_index(index_dict, f"{DNAStream.SNV}")
-
-    def save_sample_index(self, index_dict):
-        """
-        Save the sample index to the HDF5 file.
-
-        Parameters
-        ----------
-        index_dict : dict
-            Dictionary mapping sample labels to their respective indices.
-        """
-        return self._save_index(index_dict, f"{DNAStream.SAMPLE}")
-
-    def _load_index(self, index_name):
-        """
-        Load the label-to-index mapping from the HDF5 file.
-
-        Parameters
-        ----------
-        index_name : str
-            The index type, either DNAStream.SNV or DNAStream.SAMPLE.
-
-        Returns
-        -------
-        dict
-            A dictionary mapping labels to indices.
-        """
-        if self.verbose:
-            print(f"#Loading index {index_name} into memory.")
-        if index_name in self.file:
-
-            index_data = self.file[f"{index_name}/index"][()]
-            return json.loads(index_data[0]) if len(index_data) > 0 else {}
-        return {}
-
-    def _save_index(self, index_dict, index_name):
-        """
-        Save the label-to-index mapping into the HDF5 file.
-
-        Parameters
-        ----------
-        index_dict : dict
-            Dictionary mapping labels to indices.
-        index_name : str
-            The index type, either DNAStream.SNV or DNAStream.SAMPLE.
-        """
-        if self.verbose:
-            print(f"#Writing {index_name} to memory.")
-        index_json = json.dumps(index_dict)  # Convert dictionary to JSON string
-        self.file[f"{index_name}/index"].resize((1,))  # Ensure space in dataset
-        self.file[f"{index_name}/index"][0] = index_json  # Store JSON string in HDF5
 
     def batch_add_snvs(self, labels, source_file=""):
         """
@@ -779,9 +727,11 @@ class DNAStream:
         dict
             A dictionary mapping SNV labels to their respective indices.
         """
-        return self._batch_add_index(
-            labels, index_name=DNAStream.SNV, source_file=source_file
-        )
+        snv_dict = self.global_idx[DNAStream.SNV].add_labels(labels, source_file)
+
+        self._resize_all(m=self.global_idx[DNAStream.SNV].size())
+
+        return snv_dict
 
     def batch_add_samples(self, labels, source_file=""):
         """
@@ -799,125 +749,15 @@ class DNAStream:
         dict
             A dictionary mapping sample labels to their respective indices.
         """
-        return self._batch_add_index(
-            labels, index_name=DNAStream.SAMPLE, source_file=source_file
-        )
+        sample_dict = self.global_idx[DNAStream.sample].add_labels(labels, source_file)
 
-    def _batch_add_index(self, labels, index_name, source_file=""):
-        """
-        Internal method to batch add multiple labels (SNVs or samples) to the dataset.
+        self._resize_all(n=self.global_idx[DNAStream.sample].size())
 
-        Parameters
-        ----------
-        labels : list of str
-            List of labels to add.
-        index_name : str
-            The index type, either DNAStream.SNV or DNAStream.SAMPLE.
-        source_file : str, optional
-            Path to the source file from which the labels are being added (default is an empty string).
+        return sample_dict
 
-        Returns
-        -------
-        dict
-            A dictionary mapping labels to their respective indices.
-        """
-        index_dict = self._load_index(index_name)
-        pre_size = len(index_dict)
 
-        indices = []
-        new = 0
-        for lab in labels:
-            if lab in index_dict:
-                indices.append(index_dict[lab])
-            else:
-                next_idx = len(index_dict)
-                indices.append(next_idx)
-                index_dict[lab] = next_idx
-                new += 1
 
-        indices = np.array(indices)
-        labels = np.array(labels)
 
-        # Sort indices and labels concurrently for HDF5 fancy indexing
-        labels, indices = (
-            labels[np.argsort(indices)].tolist(),
-            indices[np.argsort(indices)].tolist(),
-        )
-
-        if self.file[f"{index_name}/label"].shape[0] != len(index_dict):
-
-            if index_name == DNAStream.SNV:
-                self._resize_all(m=len(index_dict))
-            if index_name == DNAStream.SAMPLE:
-                self._resize_all(n=len(index_dict))
-
-        self.file[f"{index_name}/label"][indices] = labels
-
-        self._save_index(index_dict, index_name)
-        post_size = len(index_dict)
-
-        if new > 0:
-            self._update_index_log(
-                index_name,
-                new,
-                pre_size,
-                post_size,
-                operation="add",
-                source_file=source_file,
-            )
-
-        if self.verbose:
-            print(f"#{new} items added to {index_name} index")
-
-        return index_dict
-
-    def _update_index_log(
-        self, index_name, num, pre_size, post_size, operation, source_file
-    ):
-        """
-        Log index updates (SNV or sample) in the HDF5 file.
-
-        This method records modifications to the index, including the number of new entries,
-        operation type (e.g., "add"), and relevant metadata.
-
-        Parameters
-        ----------
-        index_name : str
-            The index type, either DNAStream.SNV or DNAStream.SAMPLE.
-        num : int
-            The number of new entries added to the index.
-        pre_size : int
-            The size of the index before the operation.
-        post_size : int
-            The size of the index after the operation.
-        operation : str
-            The operation performed (e.g., "add", "remove").
-        source_file : str
-            Path to the file from which the data was added.
-
-        Notes
-        -----
-        - The log entry includes a timestamp, the operation type, the user, and the hostname.
-        - The log dataset is resized dynamically to accommodate new entries.
-        """
-        source_file = str(pathlib.Path(source_file).resolve())
-        log = self.file[f"{index_name}/log"]
-        current_size = log.shape[0]
-        new_size = current_size + 1
-        log.resize((new_size,))
-        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S").encode("utf-8")
-        user = getpass.getuser().encode("utf-8")
-        hostname = socket.gethostname().encode("utf-8")
-        log[current_size] = (
-            timestamp_str,
-            num,
-            pre_size,
-            post_size,
-            operation,
-            user,
-            hostname,
-            source_file,
-        )
 
     def get_snv_data(self, indices=None):
         """
@@ -944,7 +784,7 @@ class DNAStream:
         pandas.DataFrame
             A DataFrame containing log entries for SNV updates.
         """
-        return self._get_data(dataset_name=f"{DNAStream.SNV}/log")
+        return self._get_data(dataset_name=self.global_idx[DNAStream.SNV].log_name)
 
     def get_sample_log(self):
         """
@@ -955,7 +795,7 @@ class DNAStream:
         pandas.DataFrame
             A DataFrame containing log entries for sample updates.
         """
-        return self._get_data(dataset_name=f"{DNAStream.SAMPLE}/log")
+        return self._get_data(dataset_name=self.global_idx[DNAStream.sample].log_name)
 
     def get_dataset_log(self):
         """
@@ -1316,31 +1156,22 @@ class DNAStream:
 
         return tree_list, None
 
-    def _add_tree(self, edge_list, tree_type, data=None, index=None):
+    def _add_tree(self, edge_list, tree_type, data=None):
 
         trees = self.file[f"{DNAStream.TREE}/{tree_type}_trees"]
-        save = False
-        if index is None:
-            index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees")
-            save = True
 
-        numtrees = len(index)
-        new_size = numtrees + 1
 
-        for key in trees:
-            if key != "index":
-                trees[key].resize((new_size,))
-        label = f"tree{numtrees}"
-        index[f"tree{numtrees}"] = numtrees
+        tree_dict = self.local_idx(f"{DNAStream.TREE}/{tree_type}_trees").allocate_labels(len(edge_list))
 
-        if save:
-            self._save_index(index, f"{DNAStream.TREE}/{tree_type}_tree")
+  
+        num = 0
+        for key, val in tree_dict.items():
+            trees["trees"][val] = np.array(edge_list[num], dtype=EDGE_LIST_DTYPE)
+            num += 1 
 
-        trees["trees"][numtrees] = np.array(edge_list, dtype=EDGE_LIST_DTYPE)
-
-        if data:
-            data["label"] = label
-            trees["data"][numtrees] = data
+            if data:
+                data["label"] = key
+                trees["data"][num] = data
 
     def _search_data_by_filename(self, dataset_name, fname):
         """
@@ -1415,7 +1246,6 @@ class DNAStream:
                 )
                 return
 
-            tree_index = self._load_index(f"{DNAStream.TREE}/{tree_type}_trees")
             print("Parsing file...")
             # Parse tree file according to method
             if method == "conipher":
@@ -1435,9 +1265,9 @@ class DNAStream:
                         [("", method, scores[i], i, source_file)], dtype=data_dtype
                     )
 
-                self._add_tree(edge_list, tree_type, data=dat, index=tree_index)
+                self._add_tree(edge_list, tree_type, data=dat)
 
-            self._save_index(tree_index, f"{DNAStream.TREE}/{tree_type}_trees")
+
             self._log_dataset_modification(
                 f"{DNAStream.TREE}/{tree_type}_trees",
                 operation="update",

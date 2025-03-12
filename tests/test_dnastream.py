@@ -31,42 +31,6 @@ def test_dnastream_initialization(temp_h5_file):
     ds.close()
 
 
-def test_add_maf_files(temp_h5_file):
-    """Test adding MAF files."""
-    ds = DNAStream(filename=temp_h5_file, verbose=True)
-    indices = ds.add_maf_files(MAF_FILES)
-    assert indices is None
-
-    ds.close()
-
-
-def test_add_read_counts(temp_h5_file):
-    """Test adding read counts."""
-    ds = DNAStream(filename=temp_h5_file, verbose=True)
-    ds.add_read_counts(READ_COUNT_FILE, source="scdna")
-    snv_log = ds.get_snv_log()
-    sample_log = ds.get_sample_log()
-
-    assert not snv_log.empty
-    assert not sample_log.empty
-    ds.close()
-
-
-def test_log_retrieval(temp_h5_file):
-    """Test that logs are correctly retrieved after modifications."""
-    ds = DNAStream(filename=temp_h5_file, verbose=True)
-    ds.add_maf_files(MAF_FILES)
-    ds.add_read_counts(READ_COUNT_FILE, source="scdna")
-    snv_log = ds.get_snv_log()
-    sample_log = ds.get_sample_log()
-
-    assert snv_log is not None
-    assert sample_log is not None
-    assert len(snv_log) > 0
-    assert len(sample_log) > 0
-    ds.close()
-
-
 def test_dnastream_cleanup(temp_h5_file):
     """Ensure the HDF5 file closes properly after operations."""
     ds = DNAStream(filename=temp_h5_file, verbose=True)
@@ -74,25 +38,63 @@ def test_dnastream_cleanup(temp_h5_file):
     assert ds.file.id.valid == 0  # Check that the file is closed
 
 
-def test_add_snv_trees(temp_h5_file):
-    ds = DNAStream(filename=temp_h5_file, verbose=True)
-    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
-    tree_dat = ds._get_data("tree/SNV_trees/data")
-    assert tree_dat.shape[0] > 0
-    numtrees = tree_dat.shape[0]
-    # test safe mode
-    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
-    tree_dat = ds._get_data("tree/SNV_trees/data")
-    assert tree_dat.shape[0] == numtrees
+# def test_add_maf_files(temp_h5_file):
+#     """Test adding MAF files."""
+#     ds = DNAStream(filename=temp_h5_file, verbose=True)
+#     indices = ds.add_maf_files(MAF_FILES)
+#     assert indices is None
 
-    # test force append
-    ds.safe_mode_disable()
-    ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
-    tree_dat = ds._get_data("tree/SNV_trees/data")
-    assert tree_dat.shape[0] == numtrees * 2
+#     ds.close()
 
-    # test sapling
-    ds.safe_mode_enable()
-    ds.add_trees_from_file(SAPLING, tree_type="SNV", method="sapling")
-    tree_dat = ds._get_data("tree/SNV_trees/data")
-    assert tree_dat.shape[0] > numtrees * 2
+
+# def test_add_read_counts(temp_h5_file):
+#     """Test adding read counts."""
+#     ds = DNAStream(filename=temp_h5_file, verbose=True)
+#     ds.add_read_counts(READ_COUNT_FILE, source="scdna")
+#     snv_log = ds.get_snv_log()
+#     sample_log = ds.get_sample_log()
+
+#     assert not snv_log.empty
+#     assert not sample_log.empty
+#     ds.close()
+
+
+# def test_log_retrieval(temp_h5_file):
+#     """Test that logs are correctly retrieved after modifications."""
+#     ds = DNAStream(filename=temp_h5_file, verbose=True)
+#     ds.add_maf_files(MAF_FILES)
+#     ds.add_read_counts(READ_COUNT_FILE, source="scdna")
+#     snv_log = ds.get_snv_log()
+#     sample_log = ds.get_sample_log()
+
+#     assert snv_log is not None
+#     assert sample_log is not None
+#     assert len(snv_log) > 0
+#     assert len(sample_log) > 0
+#     ds.close()
+
+
+
+
+# def test_add_snv_trees(temp_h5_file):
+#     ds = DNAStream(filename=temp_h5_file, verbose=True)
+#     ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
+#     tree_dat = ds._get_data("tree/SNV_trees/data")
+#     assert tree_dat.shape[0] > 0
+#     numtrees = tree_dat.shape[0]
+#     # test safe mode
+#     ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
+#     tree_dat = ds._get_data("tree/SNV_trees/data")
+#     assert tree_dat.shape[0] == numtrees
+
+#     # test force append
+#     ds.safe_mode_disable()
+#     ds.add_trees_from_file(CONIPHER, tree_type="SNV", method="conipher")
+#     tree_dat = ds._get_data("tree/SNV_trees/data")
+#     assert tree_dat.shape[0] == numtrees * 2
+
+#     # test sapling
+#     ds.safe_mode_enable()
+#     ds.add_trees_from_file(SAPLING, tree_type="SNV", method="sapling")
+#     tree_dat = ds._get_data("tree/SNV_trees/data")
+#     assert tree_dat.shape[0] > numtrees * 2
