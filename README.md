@@ -167,55 +167,51 @@ The schema is currently underdevelopment is subject to change but below is the c
 ```
 /
  ├── SNV/                     # Shared SNV index
- │   ├── labels               #short name chr:pos:ref:alt
-     |── data                #dataframe structure containing quality scores, number of callers, etc
-     |── cluster
-     |── index_map             #json string for fast loading and saving
-     |-- log
- ├── sample/                     # Shared SNV index
- │   ├── labels               #short name chr:pos:ref:alt
-     |── data                 #dataframe structure containing bam file path, sample code
-     |── cluster
-     |── index_map
-     |-- log
- |-- trees/
- |   |-- SNV_trees/  
- |   |     |- trees      #edge lists of clusters
- |   |     |- data      #holds the likelihood, rank, method used to generate, etc
- |   |     |- index_map  #hold the index map
- |   |-- CNA_trees     
- |   |     |- trees      #edge lists (*) probably changed to Newick strings
- |   |     |- data      #holds the label, likelihood, rank, method used to generate, etc
- |   |     |- index_map
- |   |-- clonal_trees (joint CNA SNV tree)/
- |   |     |-- tree 
- |   |     |-- data      #holds the likelihood, rank, method used to generate, etc
- |   |     |-- index_map
- |   |     |-- genotypes (*) (structured array of node/snv/x/y/x_bar/y_bar)
- |   |     |-- clonal proportions (*) (U)
- |   |     |-- sample assignment (*)
- |   |    
- |-- copy_number/ (*)
- |   ├── /bulk/
- |   │   ├── /segments    # Bulk-specific segment index
- |   │   ├── /profiles       # Tensor: (sample, segment, allele CN, proportion μ)
- |   │   ├── /metadata    # Bulk-specific metadata
- |   |   |-- /log          # logging
- |   │
- |   ├── /single_cell/
- |   │   ├── /segments    # Single-cell segment index
- |   │   ├── /profiles       # (sample, segment) → allele CN tuple
- |   │   ├── /metadata    # Single-cell metadata
- |   │
- |   ├── /lcm/
- |   │   ├── /segments    # LCM-specific segment index
- |   │   ├── /profiles       # (sample, segment) → allele CN tuple
- |   |   |--/logR
- |   |   |--/baf
- |   │   ├── /metadata    # LCM-specific metadata
- ├── metadata/ 
-     |-- log                  # Metadata storage
- │   ├── sample_info  (*)            # Sample IDs
- │   ├── processing_parameters (*)
+ │   ├── labels               # Short name chr:pos:ref:alt
+ │   ├── data                 # Structured array: quality scores, active
+ │   ├── cluster              # Integer cluster assignments
+ │   ├── log                  # Index modification log
+ ├── sample/                  # Sample index
+ │   ├── labels               # Sample names
+ │   ├── data                 # Structured array: patient ID, source, location, file paths
+ │   ├── cluster              # Integer cluster assignments
+ │   ├── log                  # Index modification log
+ ├── tree/
+ │   ├── SNV_trees/  
+ │   │   ├── trees            # Variable-length edge lists of clusters
+ │   │   ├── data             # Likelihood, rank, method used to generate, etc.
+ │   │   ├── labels           # Tree labels
+ │   ├── CNA_trees/     
+ │   │   ├── trees            # Variable-length edge lists (or Newick strings)
+ │   │   ├── data             # Likelihood, rank, method used to generate, etc.
+ │   │   ├── labels           # Tree labels
+ ├── copy_numbers/
+ │   ├── bulk/
+ │   │   ├── labels           # Segment labels (chrom, start, end)
+ │   │   ├── index            # Bulk-specific segment index
+ │   │   ├── profile          # 3D array: (segment, sample, allele-specific CN)
+ │   │   ├── logr             # 2D array: (segment, sample) logR values
+ │   │   ├── baf              # 2D array: (segment, sample) B-allele frequency
+ │   │   ├── log              # Modification log
+ │   ├── lcm/
+ │   │   ├── labels           # Segment labels
+ │   │   ├── index            # LCM-specific segment index
+ │   │   ├── profile          # 3D array: (segment, sample, allele-specific CN)
+ │   │   ├── logr             # 2D array: (segment, sample) logR values
+ │   │   ├── baf              # 2D array: (segment, sample) B-allele frequency
+ │   │   ├── log              # Modification log
+ │   ├── scdna/
+ │   │   ├── labels           # Segment labels
+ │   │   ├── index            # Single-cell segment index
+ │   │   ├── profile          # (sample, segment) → allele CN tuple
+ │   │   ├── log              # Modification log
+ ├── read_counts/
+ │   ├── variant              # 2D array: (SNV, sample) variant read counts
+ │   ├── total                # 2D array: (SNV, sample) total read counts
+ │   ├── log                  # Read count modifications log
+ ├── metadata/
+ │   ├── log                  # Metadata modifications log
+ │   ├── sample_info          # Sample metadata
+ │   ├── processing_parameters # Processing parameters used in analysis
 
 ```
