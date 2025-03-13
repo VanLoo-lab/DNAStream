@@ -12,6 +12,7 @@ nav:
   - Home: index.md
   - API Reference:
       - DNAStream: api/dnastream.md
+      - IndexManager: api/indexmanager.md
 
 plugins:
   - search

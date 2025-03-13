@@ -18,7 +18,7 @@ from .datatypes import EDGE_LIST_DTYPE
 # TODO
 # - add pyclone addition
 # - add patient metadata
-# - add bulk phylogenies as edge lists
+
 
 """
 /
@@ -451,7 +451,7 @@ class DNAStream:
         int or None
             Index of the SNV if found, else None.
         """
-        return self._idx_by_label(label, index_name=DNAStream.SNV)
+        return self.global_idx[DNAStream.SNV].sample_label_to_idx(label)
 
     def sample_label_to_idx(self, label):
         """
@@ -467,65 +467,8 @@ class DNAStream:
         int or None
             Index of the sample if found, else None.
         """
-        return self._idx_by_label(label, index_name=DNAStream.SAMPLE)
+        return self.global_idx[DNAStream.SAMPLE][label]
 
-    # def _idx_by_label(self, label, index_name):
-    #     """
-    #     Internal function to retrieve the index from a label.
-
-    #     Parameters
-    #     ----------
-    #     label : str
-    #         Label to look up.
-    #     index_name : str
-    #         Name of the index to use.
-
-
-    #     Returns
-    #     -------
-    #     int or None
-    #         Index if found, else None.
-    #     """
-    #     labs = self.file[f"{index_name}/label"]
-
-    #     if len(labs) == 0:
-    #         return None
-
-    #     indices = np.where(labs[:] == label)[0]
-    #     if len(indices) == 0:
-    #         return None
-    #     elif len(indices) == 1:
-    #         return indices[0]
-    #     else:
-    #         self.close()
-    #         raise ValueError(
-    #             "label is associated with multiple indices and could not be added."
-    #         )
-
-    # def _label_by_idx(self, idx, index_name):
-    #     """
-    #     Internal function to label the index from an index.
-
-    #     Parameters
-    #     ----------
-    #     idx : int
-    #         index to look up.
-    #     index_name : str
-    #         Name of the index to use.
-
-
-    #     Returns
-    #     -------
-    #     str
-    #         label if found
-    #     """
-    #     try:
-    #         label = self.file[f"{index_name}/label"][idx]
-    #     except Exception as e:
-    #         self.close()
-    #         raise Exception(e)
-
-    #     return label
 
     def _resize_all(self, m=None, n=None):
         """
