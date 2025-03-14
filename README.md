@@ -12,6 +12,7 @@ See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.githu
 ## Table of Contents
 - [Dependencies](#dependencies)
 - [Installation](#installation)
+- [API](#build-and-host-api-locally)
 - [Tutorial](#tutorial)
   - [Initializing DNAStream](#initializing-dnastream)
   - [Adding SNVs from MAF Files](#adding-snvs-from-maf-files)
@@ -54,8 +55,9 @@ python -c "from dnastream import DNAStream"
  Packaage is ready to use if no errors occurred!
 
 
-To build and view the API locally, run the following in a terminal with the `dnastream` environment activated:
+
  ## Build and host API locally
+ To build and view the API locally, run the following in a terminal with the `dnastream` environment activated:
  ```bash
 mkdocs build
 mkdocs serve
