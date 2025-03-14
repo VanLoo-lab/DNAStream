@@ -908,8 +908,8 @@ class DNAStream:
 
         # Update data at provided indices
         dataset[indices] = structured_data
-
-        # log modifications
+     
+        # log modifications within the internal add function
         self._log_dataset_modification(
             dataset_name, operation="update", source_file=source_file
         )
