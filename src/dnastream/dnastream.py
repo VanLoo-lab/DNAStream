@@ -9,16 +9,17 @@ import functools
 import pandas as pd
 import h5py
 import numpy as np
-import json
+# import json
 from .index_manager import BaseIndex, GlobalIndex
 
-from .schema import SCHEMA, STRUCT_ARRAYS, META_TABLES, MODALITIES
+from .schema import SCHEMA, STRUCT_ARRAYS, META_TABLES, MODALITIES, COPY_NUMBER_LAYER_DICT
 from .datatypes import EDGE_LIST_DTYPE
 
 # TODO
 # - add pyclone addition
 # - add patient metadata
-
+# - LCM coordinates
+# - pseudo-bulk optional layers
 
 """
 /
@@ -551,7 +552,7 @@ class DNAStream:
         int
             The assigned index of the sample in the dataset.
         """
-        return self.add_item(
+        return self._add_item(
             label,
             index=DNAStream.SAMPLE,
             cluster=cluster,
@@ -1339,6 +1340,20 @@ class DNAStream:
             )
             for table in tables
         }
+    
+    def initialize_pseudobulk_layer(self, sample_label, source_file=""):
+        """
+        Automatically generates copynumber datasets for a pseudob-bulk analysis and
+        adds sample to the sample index.
+        """
+        pseudo_bulk_schema = {sample_label: COPY_NUMBER_LAYER_DICT}
+        self.add_sample(sample_label, data={"source": "pseudo-bulk"}, overwrite=True)
+        self._recursive_build(pseudo_bulk_schema, "copy_numbers")
+        self._log_dataset_modification(
+            f"copy_numbers/{sample_label}", operation="create", source_file=source_file
+        )
+
+
 
     def close(self):
         """

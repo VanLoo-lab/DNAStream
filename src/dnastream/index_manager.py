@@ -108,7 +108,7 @@ class BaseIndex:
         """
         return [self._index_cache.get(label, None) for label in labels]
 
-    def allocate_labels(self, num, prefix=None ):
+    def _allocate_labels(self, num, prefix=None ):
         """
         Allocate a block of labels.
 

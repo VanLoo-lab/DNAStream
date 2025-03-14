@@ -19,6 +19,7 @@ STRUCT_ARRAYS = ["log", "data"]
 
 META_TABLES = ["data", "cluster"]
 
+
 INDEX_DICT = {
     "dtype": STR_DTYPE,
     "shape": (0,),
@@ -39,6 +40,21 @@ LABEL_DICT = {
             "maxshape": (None,),
             "chunks": (100,),
         }
+
+COPY_NUMBER_LAYER_DICT = {
+  
+            "profile": {
+                "dtype": h5py.vlen_dtype(ALLELE_SPECIFIC_CN_DTYPE),
+                "shape": (0, 0),
+                "maxshape": (None, None),
+                "chunks": (1, 100),  # Optimized for growing rows dynamically
+            },
+            "logr": {"dtype": "f8", "shape": (0, 0), "maxshape": (None, None), "chunks": (100, 100)},
+            "baf": {"dtype": "f8", "shape": (0, 0), "maxshape": (None, None), "chunks": (100, 100)},
+            "data": SEGMENT_LABEL_DTYPE,
+            "labels": LABEL_DICT,
+            # TODO: add metadata  
+}
 
 SCHEMA = {
     "metadata": {
@@ -75,20 +91,7 @@ SCHEMA = {
         },
     },
     "copy_numbers": {
-        s: {
-            "profile": {
-                "dtype": h5py.vlen_dtype(ALLELE_SPECIFIC_CN_DTYPE),
-                "shape": (0, 0),
-                "maxshape": (None, None),
-                "chunks": (1, 100),  # Optimized for growing rows dynamically
-            },
-            "logr": {"dtype": "f8", "shape": (0, 0), "maxshape": (None, None), "chunks": (100, 100)},
-            "baf": {"dtype": "f8", "shape": (0, 0), "maxshape": (None, None), "chunks": (100, 100)},
-            "index": INDEX_DICT,
-            "data": SEGMENT_LABEL_DTYPE,
-            "labels": LABEL_DICT,
-            # TODO: add metadata
-        }
+        s: COPY_NUMBER_LAYER_DICT
         for s in MODALITIES
     },
     "read_counts": {
