@@ -35,8 +35,8 @@ Clone the git repository and create a conda environment (recommended).
 ```bash
 git clone git@github.mdanderson.org:llweber/DNAStream.git
 cd DNAstream
-mamba create -n dnastream python=3.11
-mamba activate dnastream
+conda create -n dnastream python=3.11
+conda activate dnastream
 ```
 
 Install the `dnastream` package and dependencies via pip.  
@@ -53,6 +53,17 @@ python -c "from dnastream import DNAStream"
 
  Packaage is ready to use if no errors occurred!
 
+
+To build and view the API locally, run the following in a terminal with the `dnastream` environment activated:
+ ## Build and host API locally
+ ```bash
+mkdocs build
+mkdocs serve
+ ```
+
+You will see a message like `INFO    -  [10:31:55] Browser connected: http://127.0.0.1:8000/`
+
+The click on the link or open a browser at the above address to view the API.
 
  ## Tutorial
 

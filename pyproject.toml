@@ -14,11 +14,15 @@ dependencies = [
     "h5py",
     "pandas",
     "numpy",
+    "mkdocs",
+    "mkdocstrings",
+    "mkdocstrings-python",
+    "mkdocs-material"
 ]
 
 [project.urls]
-Homepage = "https://github.mdanderson.org/llweber/DNAStream"
-Repository = "https://github.mdanderson.org/llweber/DNAStream"
+Homepage = "https://github.com/VanLoo-lab/DNAStream"
+Repository = "https://github.com/VanLoo-lab/DNAStream"
 
 
 
