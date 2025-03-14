@@ -23,10 +23,9 @@ class BaseIndex:
         verbose : bool, optional
             Whether to print debug messages (default is False).
         """
-    
+
         # if "index" not in file:
         #     raise ValueError(f"index group not found in file!")
-        
 
         self.file = file
         self.group = name
@@ -44,14 +43,14 @@ class BaseIndex:
                 maxshape=(None,),
                 dtype=h5py.string_dtype("utf-8"),
             )
-        
+
         if self.dat_name not in self.file:
             self.file.create_dataset(
                 self.dat_name,
                 shape=(0,),
                 maxshape=(None,),
                 dtype=self.dat_dtype,
-        )
+            )
             self.file[self.dat_name].attrs["columns"] = self.dat_dtype.names
 
         self.labels = self.file[self.label_name]
@@ -60,8 +59,7 @@ class BaseIndex:
         # Load index into memory for fast access
         self._labels_cache = list(self.labels[:])  # Convert NumPy array to list
         self._index_cache = {lab: i for i, lab in enumerate(self._labels_cache)}
-        self._metadata_cache = self.metadata[:]  #numpy array
-        
+        self._metadata_cache = self.metadata[:]  # numpy array
 
     def size(self):
         """Return the number of labels in the index."""
@@ -69,17 +67,17 @@ class BaseIndex:
 
     def _resize(self, new_size):
         """Resize the index dataset."""
-        self.labels.resize((new_size,)) 
-        self.metadata.resize((new_size,)) 
+        self.labels.resize((new_size,))
+        self.metadata.resize((new_size,))
 
     def _save_index(self):
         """Save index to HDF5 dataset if modified."""
         if self._modified:
             self._resize(new_size=self.size())
 
-            #write the cache to disk
+            # write the cache to disk
             self.labels[:] = self._labels_cache  # Update HDF5 dataset
-            self.metadata[:] = self._metadata_cache # Expand dataset
+            self.metadata[:] = self._metadata_cache  # Expand dataset
             self._modified = False  # Reset modification flag
 
     def _default_metadata_value(self, field):
@@ -96,8 +94,8 @@ class BaseIndex:
             return b""  # Use bytes for fixed-length strings
         else:
             raise ValueError(f"Unhandled metadata field type: {field_type}")
-    
-    def add(self, labels, metadata = {}):
+
+    def add(self, labels, metadata={}):
         """
         Add multiple labels to the index.
 
@@ -120,9 +118,13 @@ class BaseIndex:
 
         # Assign metadata values (use default if not provided)
         for i, (label, idx) in enumerate(added_indices.items()):
-            entry_metadata = metadata.get(label, {})  # Get metadata dict for label or empty dict
+            entry_metadata = metadata.get(
+                label, {}
+            )  # Get metadata dict for label or empty dict
             for field in self.dat_dtype.names:  # Loop through all fields in dtype
-                new_metadata[i][field] = entry_metadata.get(field, self._default_metadata_value(field))
+                new_metadata[i][field] = entry_metadata.get(
+                    field, self._default_metadata_value(field)
+                )
 
         # Insert new metadata into the cache
         self._metadata_cache = np.concatenate((self._metadata_cache, new_metadata))
@@ -167,7 +169,6 @@ class BaseIndex:
         """
         return [self._index_cache.get(label, None) for label in labels]
 
-   
     def resize(self, num, prefix=None):
         """
         Allocate a block of labels.
@@ -188,7 +189,6 @@ class BaseIndex:
         labels = [f"{prefix}_{i}" for i in range(new_idx, new_idx + num)]
         return self.add(labels)
 
-
     def get_metadata(self, label):
         """Get metadata for a given label.
 
@@ -196,10 +196,11 @@ class BaseIndex:
         ----------
         label : str
             The label to look up.
-        
+
         """
         idx = self._index_cache.get(label, None)
         return self.metadata[idx] if idx is not None else None
+
 
 class GlobalIndex(BaseIndex):
     """Handles global indices (SNV, sample)."""
@@ -227,12 +228,11 @@ class GlobalIndex(BaseIndex):
     def get_log(self):
         """Return the log dataset."""
         return self.log
- 
+
     def _resize(self, new_size):
         super()._resize(new_size)
         self.cluster.resize((new_size,))
 
-    
     def update_cluster(self, label, cluster):
         """
         Update the cluster assignment for a label.
@@ -283,8 +283,8 @@ class GlobalIndex(BaseIndex):
         if clusters:
             if len(clusters) != len(labels):
                 raise ValueError("len(clusters) must match number of len(labels).")
-            
-            cluster_dict =  dict(zip(labels, clusters))
+
+            cluster_dict = dict(zip(labels, clusters))
             self.update_cluster(cluster_dict)
 
         if post_size > pre_size:

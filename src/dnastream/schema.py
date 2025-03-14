@@ -20,7 +20,6 @@ STRUCT_ARRAYS = ["log", "metadata"]
 META_TABLES = ["metadata", "cluster"]
 
 
-
 INDEX_DICT = {
     "dtype": STR_DTYPE,
     "shape": (0,),
@@ -61,13 +60,13 @@ COPY_NUMBER_LAYER_DICT = {
         "maxshape": (None, None),
         "chunks": (100, 100),
     },
-    "metadata":  {
-            "dtype": SEGMENT_LABEL_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-    "labels": LABEL_DICT
+    "metadata": {
+        "dtype": SEGMENT_LABEL_DTYPE,
+        "shape": (0,),
+        "maxshape": (None,),
+        "chunks": (100,),
+    },
+    "labels": LABEL_DICT,
     # TODO: add metadata
 }
 
@@ -80,68 +79,67 @@ SCHEMA = {
             "chunks": (100,),
         }
     },
-    "index" : 
-    {
+    "index": {
         "SNV": {
-        "cluster": {
-            "dtype": "i8",
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
+            "cluster": {
+                "dtype": "i8",
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "metadata": {
+                "dtype": SNV_DTYPE,
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "labels": LABEL_DICT,
+            "log": LOG_DICT,
         },
-        "metadata": {
-            "dtype": SNV_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
+        "sample": {
+            "label": {
+                "dtype": STR_DTYPE,
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "cluster": {
+                "dtype": "i8",
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "metadata": {
+                "dtype": SAMPLE_DTYPE,
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "labels": LABEL_DICT,
+            "log": LOG_DICT,
         },
-        "labels": LABEL_DICT,
-        "log": LOG_DICT,
-    },
-    "sample": {
-        "label": {
-            "dtype": STR_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
+        "SNP": {
+            "label": {
+                "dtype": STR_DTYPE,
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "cluster": {
+                "dtype": "i8",
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "metadata": {
+                "dtype": SNV_DTYPE,
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "labels": LABEL_DICT,
+            "log": LOG_DICT,
         },
-        "cluster": {
-            "dtype": "i8",
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "metadata": {
-            "dtype": SAMPLE_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "labels": LABEL_DICT,
-        "log": LOG_DICT,
-    },
-    "SNP": {
-        "label": {
-            "dtype": STR_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "cluster": {
-            "dtype": "i8",
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "metadata": {
-            "dtype": SNV_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "labels": LABEL_DICT,
-        "log": LOG_DICT,
-    }
     },
     "tree": {
         "SNV_trees": {

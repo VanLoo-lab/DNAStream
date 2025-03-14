@@ -33,10 +33,7 @@ def test_add_snv_trees_from_edge_list(dnastream_obj):
     dnastream_obj.add_trees_from_edge_lists(tree_list, method="conipher")
     tree_data = dnastream_obj._get_data("tree/SNV_trees/metadata")
 
-    assert (
-        tree_data.shape[0] == len(tree_list)
-    ), "Failed to add trees from edge lists!"
-  
+    assert tree_data.shape[0] == len(tree_list), "Failed to add trees from edge lists!"
 
     # # test sapling
     # dna_stream_obj.safe_mode_enable()

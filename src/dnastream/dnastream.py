@@ -28,6 +28,7 @@ def wrap_list(val):
         return val
     return [val]
 
+
 def full_path(fname):
     return str(pathlib.Path(fname).resolve())
 
@@ -192,11 +193,17 @@ class DNAStream:
             self._recursive_build(SCHEMA)
 
         self.global_idx = {
-            name: GlobalIndex(self.file, f"index/{name}", metadata_dtype=SCHEMA["index"][name]["metadata"]["dtype"]) for name in SCHEMA["index"].keys()
+            name: GlobalIndex(
+                self.file,
+                f"index/{name}",
+                metadata_dtype=SCHEMA["index"][name]["metadata"]["dtype"],
+            )
+            for name in SCHEMA["index"].keys()
         }
         self.local_idx = {
-            name: BaseIndex(self.file, name, metadata_dtype=self._local_idx_dtype(name)) for name in DNAStream.LOCAL_INDICES
-        }  
+            name: BaseIndex(self.file, name, metadata_dtype=self._local_idx_dtype(name))
+            for name in DNAStream.LOCAL_INDICES
+        }
         # Create group structure for read counts
         # for key, _ in READ_COUNTS.items():
         #     # self.add_dataset_to_file(
@@ -236,10 +243,10 @@ class DNAStream:
         mystr += f"\nPatient: {self.file.attrs['id']}, sex: {self.file.attrs['sex']}"
 
         return mystr
-    
+
     def _dtype(self, table):
         return self.file[table].dtype
-    
+
     def _local_idx_dtype(self, table):
         if f"{table}/metadata" not in self.file:
             print(f"{table}/metadata")
@@ -274,7 +281,7 @@ class DNAStream:
                 new_path = f"{path}/{key}" if path else key  # Construct the HDF5 path
 
                 # if key == "index":
-                #     return 
+                #     return
                 if isinstance(value, dict) and "dtype" in value:
                     # Base case: value holds dataset initialization specs
                     self.add_dataset_to_file(
@@ -802,7 +809,9 @@ class DNAStream:
         pandas.DataFrame
             A DataFrame containing the sample data.
         """
-        return self._get_data(dataset_name=f"{DNAStream.SAMPLE}/metadata", indices=indices)
+        return self._get_data(
+            dataset_name=f"{DNAStream.SAMPLE}/metadata", indices=indices
+        )
 
     def _get_data(self, dataset_name, indices=None):
         """
@@ -867,7 +876,10 @@ class DNAStream:
         - Uses structured NumPy arrays for efficient storage.
         """
         self._add_data(
-            indices, df, dataset_name=f"{DNAStream.SNV}/metadata", source_file=source_file
+            indices,
+            df,
+            dataset_name=f"{DNAStream.SNV}/metadata",
+            source_file=source_file,
         )
 
     def add_sample_data(self, indices, df, source_file=""):
@@ -936,7 +948,7 @@ class DNAStream:
 
         # Update data at provided indices
         dataset[indices] = structured_data
-     
+
         # log modifications within the internal add function
         self._log_dataset_modification(
             dataset_name, operation="update", source_file=source_file
@@ -1154,7 +1166,6 @@ class DNAStream:
             new_size = old_size + n
             self.file[table].resize((new_size,))
 
-    
     def add_trees_from_edge_lists(self, tree_list, scores=None, method=""):
         """
         Manually add  list of trees to the HDF5 dataset.
@@ -1163,7 +1174,7 @@ class DNAStream:
         ----------
         tree_list : list of list of int tuples
             List of (parent, child) edges representing the tree structure.
-   
+
         scores : list of float, optional
             A list of numerical scores associated with the trees (e.g., likelihood scores).
         method : str, optional
@@ -1171,7 +1182,6 @@ class DNAStream:
         source_file : str, optional
             Path to the source file from which the trees are being added (default is an empty string).
         """
-        
 
         try:
             self._add_trees(tree_list, "SNV", scores, method)
@@ -1198,9 +1208,7 @@ class DNAStream:
         table_name = f"{DNAStream.TREE}/{tree_type}_trees"
         tree_list = wrap_list(tree_list)
 
-        tree_dict = self.local_idx[table_name].resize(
-            len(tree_list), prefix="snv_tree"
-        )
+        tree_dict = self.local_idx[table_name].resize(len(tree_list), prefix="snv_tree")
 
         tree_indices = list(tree_dict.values())
 
@@ -1352,8 +1360,8 @@ class DNAStream:
         - The function logs modifications to the SNV tree dataset.
         - The tree is added with metadata including method, score, and rank.
         """
-        data_dtype =self._dtype(f"{DNAStream.TREE}/SNV_trees/metadata")
-    
+        data_dtype = self._dtype(f"{DNAStream.TREE}/SNV_trees/metadata")
+
         dat = np.array([("", method, score, rank, "")], dtype=data_dtype)
         self._add_trees(edge_list, "SNV", data=dat)
         self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
@@ -1454,7 +1462,6 @@ class DNAStream:
             for table in tables
         }
 
-
     def add_copy_numbers(self, labels, values, source_file=""):
         """
         Add copy number data to the HDF5 dataset.
@@ -1500,7 +1507,7 @@ class DNAStream:
 
             # Add the copy number metadata to the file
             data_dtype = self._dtype(f"{DNAStream.COPY_NUMBER}/metadata")
-            #SCHEMA[DNAStream.COPY_NUMBER]["data"]["dtype"]
+            # SCHEMA[DNAStream.COPY_NUMBER]["data"]["dtype"]
             dat = np.array(
                 [(lab, val, source_file) for lab, val in zip(copy_number_dict, values)],
                 dtype=data_dtype,
@@ -1515,16 +1522,15 @@ class DNAStream:
         except Exception as e:
             self.close()
             raise Exception(e)
-        
-    def parse_battenberg_file(self, fname, sample_label):
 
+    def parse_battenberg_file(self, fname, sample_label):
         """
         Parse a Battenberg file and extract the copy number data.
 
         Parameters
         ----------
         fname : str
-            Path to the Battenberg file to parse.   
+            Path to the Battenberg file to parse.
         """
         #  Column	Description
         # chr	The chromosome of the segment
@@ -1551,7 +1557,7 @@ class DNAStream:
             # cn_labels = df[['chr', 'startpos', 'endpos']].astype(str).agg(':'.join, axis=1).unique().tolist()
 
             # self.lo
-            
+
             # self.add_copy_numbers(cn_labels, cn_values, source_file=fname)
 
         except Exception as e:
@@ -1569,7 +1575,6 @@ class DNAStream:
         self._log_dataset_modification(
             f"copy_numbers/{sample_label}", operation="create", source_file=source_file
         )
-
 
     def close(self):
         """
