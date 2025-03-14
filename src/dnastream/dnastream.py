@@ -9,11 +9,25 @@ import functools
 import pandas as pd
 import h5py
 import numpy as np
+
 # import json
 from .index_manager import BaseIndex, GlobalIndex
 
-from .schema import SCHEMA, STRUCT_ARRAYS, META_TABLES, MODALITIES, COPY_NUMBER_LAYER_DICT
+from .schema import (
+    SCHEMA,
+    STRUCT_ARRAYS,
+    META_TABLES,
+    MODALITIES,
+    COPY_NUMBER_LAYER_DICT,
+)
 from .datatypes import EDGE_LIST_DTYPE
+
+
+def wrap_list(val):
+    if type(val) is list:
+        return val
+    return [val]
+
 
 # TODO
 # - add pyclone addition
@@ -142,6 +156,7 @@ class DNAStream:
     SCDNA = "scdna"
 
     SNV = "SNV"
+    SNP = "SNP"
     SAMPLE = "sample"
     TREE = "tree"
     CNA = "CNA"
@@ -149,8 +164,10 @@ class DNAStream:
 
     TREE_TYPES = ["SNV", "CNA", "clonal"]
 
-    GLOBAL_INDICES = [SNV, SAMPLE]
-    LOCAL_INDICES = [f"tree/_{ttype}_trees"  for ttype in TREE_TYPES] + [f"copy_number/{mod}" for mod in MODALITIES]
+    GLOBAL_INDICES = [SNV, SAMPLE, SNP]
+    LOCAL_INDICES = [f"tree/{ttype}_trees" for ttype in TREE_TYPES] + [
+        f"copy_number/{mod}" for mod in MODALITIES
+    ]
     TREES = [SNV, CNA, CLONAL]
 
     def __init__(
@@ -171,21 +188,25 @@ class DNAStream:
         if initialize:
             self._recursive_build(SCHEMA)
 
-        self.global_idx = {name: GlobalIndex(self.file, name) for name in DNAStream.GLOBAL_INDICES}
-        self.local_idx = {name: BaseIndex(self.file, name) for name in DNAStream.LOCAL_INDICES}
-            # Create group structure for read counts
-            # for key, _ in READ_COUNTS.items():
-            #     # self.add_dataset_to_file(
-            #     #     key,
-            #     #     shape=(0, 0),
-            #     #     maxshape=(None, None),
-            #     #     dtype=dtype,
-            #     #     compression="gzip",
-            #     #     chunks=(1, 5000),
-            #     # )
-            #TODO: add dim labels 
-            #     self.file[key].dims[0].label = DNAStream.SNV
-            #     self.file[key].dims[1].label = DNAStream.SAMPLE
+        self.global_idx = {
+            name: GlobalIndex(self.file, name) for name in DNAStream.GLOBAL_INDICES
+        }
+        self.local_idx = {
+            name: BaseIndex(self.file, name) for name in DNAStream.LOCAL_INDICES
+        }
+        # Create group structure for read counts
+        # for key, _ in READ_COUNTS.items():
+        #     # self.add_dataset_to_file(
+        #     #     key,
+        #     #     shape=(0, 0),
+        #     #     maxshape=(None, None),
+        #     #     dtype=dtype,
+        #     #     compression="gzip",
+        #     #     chunks=(1, 5000),
+        #     # )
+        # TODO: add dim labels
+        #     self.file[key].dims[0].label = DNAStream.SNV
+        #     self.file[key].dims[1].label = DNAStream.SAMPLE
 
         if id:
             self.set_patient_id(id)
@@ -240,16 +261,18 @@ class DNAStream:
             for key, value in schema.items():
                 new_path = f"{path}/{key}" if path else key  # Construct the HDF5 path
 
-                if isinstance(value, dict) and "dtype" in value:  
+                if isinstance(value, dict) and "dtype" in value:
                     # Base case: value holds dataset initialization specs
                     self.add_dataset_to_file(
                         new_path,
                         dtype=value["dtype"],
-                        shape=value.get("shape", (0,)), 
-                        maxshape=value.get("maxshape", (None,)),  
+                        shape=value.get("shape", (0,)),
+                        maxshape=value.get("maxshape", (None,)),
                         chunks=value.get("chunks", None),  # Apply chunking if defined
                         compression="gzip",
-                        columns=list(value["dtype"].names) if key in STRUCT_ARRAYS else [],
+                        columns=(
+                            list(value["dtype"].names) if key in STRUCT_ARRAYS else []
+                        ),
                     )
                 else:
                     # Recursive case: value is a nested dictionary, keep traversing until dtypes is among keys
@@ -470,7 +493,6 @@ class DNAStream:
         """
         return self.global_idx[DNAStream.SAMPLE][label]
 
-
     def _resize_all(self, m=None, n=None):
         """
         Resize the HDF5 datasets to accommodate additional SNVs or samples.
@@ -491,7 +513,7 @@ class DNAStream:
 
                 self.file[group_path].resize((m,))
         else:
-            m = self.global_idx["SNV"].size() 
+            m = self.global_idx["SNV"].size()
 
         if n:
             for sample_data in META_TABLES:
@@ -500,7 +522,7 @@ class DNAStream:
                 group_path = f"{DNAStream.SAMPLE}/{sample_data}"
                 self.file[group_path].resize((n,))
         else:
-            n = self.global_idx["sample"].size() 
+            n = self.global_idx["sample"].size()
 
         group_path = "read_counts"
         for reads in ["variant", "total"]:
@@ -646,8 +668,6 @@ class DNAStream:
         """
         return self.global_idx[DNAStream.SNV].get_index()
 
-
-
     def batch_add_snvs(self, labels, source_file=""):
         """
         Batch add multiple SNVs to the dataset.
@@ -691,10 +711,6 @@ class DNAStream:
         self._resize_all(n=self.global_idx[DNAStream.sample].size())
 
         return sample_dict
-
-
-
-
 
     def get_snv_data(self, indices=None):
         """
@@ -1074,6 +1090,7 @@ class DNAStream:
         @param sep_word: str a word contained in the line separating distinct trees (default 'tree')
         @param nksip: int number of rows to skip before parsing
         """
+
         tree_list = []
         with open(fname, "r+") as file:
             new_tree = None
@@ -1093,22 +1110,104 @@ class DNAStream:
 
         return tree_list, None
 
-    def _add_tree(self, edge_list, tree_type, data=None):
+    def _expand(self, table_list, n):
+        """
+        Expand the size of the tables in the HDF5 file.
 
-        trees = self.file[f"{DNAStream.TREE}/{tree_type}_trees"]
+        Parameters
+        ----------
+        table_list : list of str
+            List of table names to expand.
+        n : int
+            the amount of additional space to allocate
+        """
+        for table in table_list:
+            old_size = self.file[table].shape[0]
+            new_size = old_size + n
+            self.file[table].resize((new_size,))
 
+    
+    def add_trees_from_edge_lists(self, tree_list, scores=None, method=""):
+        """
+        Manually add  list of trees to the HDF5 dataset.
 
-        tree_dict = self.local_idx(f"{DNAStream.TREE}/{tree_type}_trees").allocate_labels(len(edge_list))
+        Parameters
+        ----------
+        tree_list : list of list of int tuples
+            List of (parent, child) edges representing the tree structure.
+   
+        scores : list of float, optional
+            A list of numerical scores associated with the trees (e.g., likelihood scores).
+        method : str, optional
+            The method used to generate the trees (e.g., "conipher"), by default "".
+        source_file : str, optional
+            Path to the source file from which the trees are being added (default is an empty string).
+        """
+        
 
-  
-        num = 0
-        for key, val in tree_dict.items():
-            trees["trees"][val] = np.array(edge_list[num], dtype=EDGE_LIST_DTYPE)
-            num += 1 
+        try:
+            self._add_trees(tree_list, "SNV", scores, method)
+        except Exception as e:
+            self.close()
+            raise Exception(e)
 
-            if data:
-                data["label"] = key
-                trees["data"][num] = data
+    def _add_trees(self, tree_list, tree_type, scores, method="", source_file=""):
+        """
+        Add a list of trees to the HDF5 file.
+
+        Parameters
+        ----------
+        tree_list : list of list of int tuples
+            List of (parent, child) edges representing the tree structure.
+        tree_type : str
+        scores : list of float, optional
+            A list of numerical scores associated with the trees (e.g., likelihood scores).
+        method : str, optional
+            The method used to generate the trees (e.g., "conipher"), by default "".
+        source_file : str, optional
+            Path to the source file from which the trees are being added (default is an empty string).
+        """
+        table_name = f"{DNAStream.TREE}/{tree_type}_trees"
+        tree_list = wrap_list(tree_list)
+
+        tree_dict = self.local_idx[table_name]._allocate_labels(
+            len(tree_list), prefix="snv_tree"
+        )
+
+        tree_indices = list(tree_dict.values())
+
+        numtrees = len(tree_dict)
+        self._expand([f"{table_name}/trees", f"{table_name}/data"], numtrees)
+
+        # Add the tree metadata to the file
+        data_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["data"]["dtype"]
+        tree_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["trees"]["dtype"]
+        if not scores:
+            dat = np.array(
+                [(lab, method, np.nan, -1, source_file) for lab in tree_dict],
+                dtype=data_dtype,
+            )
+        else:
+            dat = np.array(
+                [
+                    (lab, method, scores[i], -1, source_file)
+                    for i, lab in enumerate(tree_dict)
+                ],
+                dtype=data_dtype,
+            )
+
+        self.file[f"{table_name}/data"][tree_indices] = dat
+
+        tree_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["trees"]["dtype"]
+        tree_structured = np.array(
+            [np.array(tree, dtype=EDGE_LIST_DTYPE) for tree in tree_list],
+            dtype=tree_dtype,
+        )
+        self.file[f"{table_name}/trees"][tree_indices] = tree_structured
+
+        self._log_dataset_modification(
+            f"{DNAStream.TREE}/{tree_type}_trees", "update", source_file=source_file
+        )
 
     def _search_data_by_filename(self, dataset_name, fname):
         """
@@ -1183,32 +1282,16 @@ class DNAStream:
                 )
                 return
 
-            print("Parsing file...")
             # Parse tree file according to method
+            if self.verbose:
+                print(f"#Adding {tree_type} trees from {fname}...")
             if method == "conipher":
                 tree_list, scores = self._parse_file(fname)
             else:
                 tree_list, scores = self._parse_file(fname, nskip=1, sep=" ")
 
-            data_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["data"]
-
-            for i, edge_list in enumerate(tree_list):
-                if scores is None:
-                    dat = np.array(
-                        [("", method, np.nan, i, source_file)], dtype=data_dtype
-                    )
-                else:
-                    dat = np.array(
-                        [("", method, scores[i], i, source_file)], dtype=data_dtype
-                    )
-
-                self._add_tree(edge_list, tree_type, data=dat)
-
-
-            self._log_dataset_modification(
-                f"{DNAStream.TREE}/{tree_type}_trees",
-                operation="update",
-                source_file=fname,
+            self._add_trees(
+                tree_list, tree_type, scores, method, source_file=source_file
             )
 
             if self.verbose:
@@ -1242,7 +1325,7 @@ class DNAStream:
         """
         data_dtype = SCHEMA[DNAStream.TREE]["SNV_trees"]["data"]
         dat = np.array([("", method, score, rank, "")], dtype=data_dtype)
-        self._add_tree(edge_list, "SNV", data=dat)
+        self._add_trees(edge_list, "SNV", data=dat)
         self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
 
     def add_pyclone_file(self, fname):
@@ -1340,7 +1423,7 @@ class DNAStream:
             )
             for table in tables
         }
-    
+
     def initialize_pseudobulk_layer(self, sample_label, source_file=""):
         """
         Automatically generates copynumber datasets for a pseudob-bulk analysis and
@@ -1352,8 +1435,6 @@ class DNAStream:
         self._log_dataset_modification(
             f"copy_numbers/{sample_label}", operation="create", source_file=source_file
         )
-
-
 
     def close(self):
         """

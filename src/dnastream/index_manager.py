@@ -5,6 +5,7 @@ import socket
 from datetime import datetime
 import h5py
 
+
 class BaseIndex:
     """Base class for handling index storage in an HDF5 dataset."""
 
@@ -30,11 +31,14 @@ class BaseIndex:
         # Ensure the index dataset exists
         if self.name not in self.file:
             self.file.create_dataset(
-                self.name, shape=(0,), maxshape=(None,), dtype=h5py.string_dtype("utf-8")
+                self.name,
+                shape=(0,),
+                maxshape=(None,),
+                dtype=h5py.string_dtype("utf-8"),
             )
 
         self.labels = self.file[self.name]
-        
+
         # Load index into memory for fast access
         self._labels_cache = list(self.labels[:])  # Convert NumPy array to list
         self._index_cache = {lab: i for i, lab in enumerate(self._labels_cache)}
@@ -42,7 +46,7 @@ class BaseIndex:
     def size(self):
         """Return the number of labels in the index."""
         return len(self._labels_cache)
-    
+
     def _save_index(self):
         """Save index to HDF5 dataset if modified."""
         if self._modified:
@@ -73,7 +77,7 @@ class BaseIndex:
 
     def get_labels(self):
         """Return the list of labels."""
-        return self._labels_cache 
+        return self._labels_cache
 
     def get_index(self):
         """Return the current index dictionary."""
@@ -87,11 +91,11 @@ class BaseIndex:
     def __contains__(self, key):
         """Enable 'in' keyword for checking membership."""
         return key in self._index_cache
-    
+
     def to_json(self):
         """Return the index as a JSON string."""
         return json.dumps(self._index_cache, indent=4)
-    
+
     def indices_by_label(self, labels):
         """
         Retrieve indices for a list of labels.
@@ -108,14 +112,14 @@ class BaseIndex:
         """
         return [self._index_cache.get(label, None) for label in labels]
 
-    def _allocate_labels(self, num, prefix=None ):
+    def _allocate_labels(self, num, prefix=None):
         """
         Allocate a block of labels.
 
         Parameters
         ----------
         num : int
-            The number of labels to allocate.       
+            The number of labels to allocate.
 
         Returns
         -------
@@ -127,17 +131,20 @@ class BaseIndex:
         new_idx = self.size()
         labels = [f"{prefix}_{i}" for i in range(new_idx, new_idx + num)]
         return self.add_labels(labels)
-    
+
+
 class GlobalIndex(BaseIndex):
     """Handles global indices (SNV, sample)."""
-    
+
     def __init__(self, file, name, verbose=False):
         super().__init__(file, name, verbose)
         self.log_name = f"{self.table}/log"
 
         # Check if datasets exist, create if not
         if self.log_name not in self.file:
-            self.file.create_dataset(self.log_name, (0,), maxshape=(None,), dtype=h5py.string_dtype("utf-8"))
+            self.file.create_dataset(
+                self.log_name, (0,), maxshape=(None,), dtype=h5py.string_dtype("utf-8")
+            )
 
         self.log = self.file[self.log_name]
 
@@ -161,7 +168,9 @@ class GlobalIndex(BaseIndex):
         post_size = self.size()
 
         if post_size > pre_size:
-            self._update_index_log(post_size- pre_size, pre_size, post_size, "add", source_file)
+            self._update_index_log(
+                post_size - pre_size, pre_size, post_size, "add", source_file
+            )
 
     def _update_index_log(self, num, pre_size, post_size, operation, source_file=""):
         """

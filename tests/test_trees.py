@@ -25,6 +25,19 @@ def test_add_snv_trees(dnastream_obj, tree_file):
         tree_data.shape[0] == initial_tree_count * 2
     ), "Disabling safe mode did not allow appending new trees!"
 
+
+def test_add_snv_trees_from_edge_list(dnastream_obj):
+    """Test adding SNV trees from an edge list."""
+    edge_list = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+    tree_list = [edge_list]
+    dnastream_obj.add_trees_from_edge_lists(tree_list, method="conipher")
+    tree_data = dnastream_obj._get_data("tree/SNV_trees/data")
+
+    assert (
+        tree_data.shape[0] == len(tree_list)
+    ), "Failed to add trees from edge lists!"
+  
+
     # # test sapling
     # dna_stream_obj.safe_mode_enable()
     # dna_stream_obj.add_trees_from_file(SAPLING, tree_type="SNV", method="sapling")
