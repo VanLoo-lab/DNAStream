@@ -65,7 +65,7 @@ mkdocs serve
 
 You will see a message like `INFO    -  [10:31:55] Browser connected: http://127.0.0.1:8000/`
 
-The click on the link or open a browser at the above address to view the API.
+Then click the link or open a browser at the above address to view the API.
 
  ## Tutorial
 
