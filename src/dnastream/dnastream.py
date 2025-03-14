@@ -28,6 +28,9 @@ def wrap_list(val):
         return val
     return [val]
 
+def full_path(fname):
+    return str(pathlib.Path(fname).resolve())
+
 
 # TODO
 # - add pyclone addition
@@ -162,11 +165,11 @@ class DNAStream:
     CNA = "CNA"
     CLONAL = "clonal"
 
-    TREE_TYPES = ["SNV", "CNA", "clonal"]
+    TREE_TYPES = ["SNV", "CNA"]
 
     GLOBAL_INDICES = [SNV, SAMPLE, SNP]
     LOCAL_INDICES = [f"tree/{ttype}_trees" for ttype in TREE_TYPES] + [
-        f"copy_number/{mod}" for mod in MODALITIES
+        f"copy_numbers/{mod}" for mod in MODALITIES
     ]
     TREES = [SNV, CNA, CLONAL]
 
@@ -189,11 +192,11 @@ class DNAStream:
             self._recursive_build(SCHEMA)
 
         self.global_idx = {
-            name: GlobalIndex(self.file, name) for name in DNAStream.GLOBAL_INDICES
+            name: GlobalIndex(self.file, f"index/{name}", metadata_dtype=SCHEMA["index"][name]["metadata"]["dtype"]) for name in SCHEMA["index"].keys()
         }
         self.local_idx = {
-            name: BaseIndex(self.file, name) for name in DNAStream.LOCAL_INDICES
-        }
+            name: BaseIndex(self.file, name, metadata_dtype=self._local_idx_dtype(name)) for name in DNAStream.LOCAL_INDICES
+        }  
         # Create group structure for read counts
         # for key, _ in READ_COUNTS.items():
         #     # self.add_dataset_to_file(
@@ -233,6 +236,15 @@ class DNAStream:
         mystr += f"\nPatient: {self.file.attrs['id']}, sex: {self.file.attrs['sex']}"
 
         return mystr
+    
+    def _dtype(self, table):
+        return self.file[table].dtype
+    
+    def _local_idx_dtype(self, table):
+        if f"{table}/metadata" not in self.file:
+            print(f"{table}/metadata")
+        dtype = self.file[f"{table}/metadata"].dtype
+        return dtype
 
     def set_patient_id(self, id):
         self.file.attrs["id"] = id
@@ -261,6 +273,8 @@ class DNAStream:
             for key, value in schema.items():
                 new_path = f"{path}/{key}" if path else key  # Construct the HDF5 path
 
+                # if key == "index":
+                #     return 
                 if isinstance(value, dict) and "dtype" in value:
                     # Base case: value holds dataset initialization specs
                     self.add_dataset_to_file(
@@ -396,12 +410,12 @@ class DNAStream:
             sample_indices = list(sample_idx.values())
             if source:
                 self._update_value(
-                    sample_indices, f"{DNAStream.SAMPLE}/data", "source", source
+                    sample_indices, f"{DNAStream.SAMPLE}/metadata", "source", source
                 )
 
             if location:
                 self._update_value(
-                    sample_indices, f"{DNAStream.SAMPLE}/data", "location", location
+                    sample_indices, f"{DNAStream.SAMPLE}/metadata", "location", location
                 )
 
             # Map indices for SNVs and samples
@@ -438,6 +452,19 @@ class DNAStream:
         except Exception as e:
             self.close()
             raise Exception(e)
+
+    def create_global_index(self, name, metadata_dtype):
+        """
+        Add an empty global index to the HDF5 file.
+
+        Parameters
+        ----------
+        name : str
+            Name of the index.
+        metadata_dtype : numpy.dtype
+            Data type of the index metadata.
+        """
+        self.global_idx[name] = GlobalIndex(self.file, name, metadata_dtype)
 
     def _add_read_count(self, snv_idx, sample_idx, var=0, total=0):
         """
@@ -640,7 +667,7 @@ class DNAStream:
         self.file[f"{index_name}/label"][new_idx] = label
         self.file[f"{index_name}/index"][label] = new_idx
         if data:
-            self.file[f"{index_name}/data"][new_idx] = data
+            self.file[f"{index_name}/metadata"][new_idx] = data
         if cluster:
             self.file[f"{index_name}/cluster"][new_idx] = cluster
 
@@ -684,13 +711,13 @@ class DNAStream:
         dict
             A dictionary mapping SNV labels to their respective indices.
         """
-        snv_dict = self.global_idx[DNAStream.SNV].add_labels(labels, source_file)
+        snv_dict = self.global_idx[DNAStream.SNV].add(labels, source_file)
 
         self._resize_all(m=self.global_idx[DNAStream.SNV].size())
 
         return snv_dict
 
-    def batch_add_samples(self, labels, source_file=""):
+    def batch_add_samples(self, labels, source_file="", metadata=None):
         """
         Batch add multiple samples to the dataset.
 
@@ -706,7 +733,7 @@ class DNAStream:
         dict
             A dictionary mapping sample labels to their respective indices.
         """
-        sample_dict = self.global_idx[DNAStream.sample].add_labels(labels, source_file)
+        sample_dict = self.global_idx[DNAStream.sample].add(labels, source_file)
 
         self._resize_all(n=self.global_idx[DNAStream.sample].size())
 
@@ -726,7 +753,7 @@ class DNAStream:
         pandas.DataFrame
             A DataFrame containing the SNV data.
         """
-        return self._get_data(dataset_name=f"{DNAStream.SNV}/data", indices=indices)
+        return self._get_data(dataset_name=f"{DNAStream.SNV}/metadata", indices=indices)
 
     def get_snv_log(self):
         """
@@ -775,7 +802,7 @@ class DNAStream:
         pandas.DataFrame
             A DataFrame containing the sample data.
         """
-        return self._get_data(dataset_name=f"{DNAStream.SAMPLE}/data", indices=indices)
+        return self._get_data(dataset_name=f"{DNAStream.SAMPLE}/metadata", indices=indices)
 
     def _get_data(self, dataset_name, indices=None):
         """
@@ -784,7 +811,7 @@ class DNAStream:
         Parameters
         ----------
         dataset_name : str
-            The name of the dataset to retrieve (e.g., "SNV/data").
+            The name of the dataset to retrieve (e.g., "SNV/metadata").
         indices : list of int, optional
             The indices of the rows to retrieve. If None, retrieves all rows.
 
@@ -799,6 +826,7 @@ class DNAStream:
         - If `indices` is provided, only the specified rows are retrieved.
         """
         dataset = self.file[dataset_name]
+
         columns = dataset.attrs["columns"]
 
         if indices is not None:
@@ -839,7 +867,7 @@ class DNAStream:
         - Uses structured NumPy arrays for efficient storage.
         """
         self._add_data(
-            indices, df, dataset_name=f"{DNAStream.SNV}/data", source_file=source_file
+            indices, df, dataset_name=f"{DNAStream.SNV}/metadata", source_file=source_file
         )
 
     def add_sample_data(self, indices, df, source_file=""):
@@ -866,7 +894,7 @@ class DNAStream:
         self._add_data(
             indices,
             df,
-            dataset_name=f"{DNAStream.SAMPLE}/data",
+            dataset_name=f"{DNAStream.SAMPLE}/metadata",
             source_file=source_file,
         )
 
@@ -1170,18 +1198,19 @@ class DNAStream:
         table_name = f"{DNAStream.TREE}/{tree_type}_trees"
         tree_list = wrap_list(tree_list)
 
-        tree_dict = self.local_idx[table_name]._allocate_labels(
+        tree_dict = self.local_idx[table_name].resize(
             len(tree_list), prefix="snv_tree"
         )
 
         tree_indices = list(tree_dict.values())
 
         numtrees = len(tree_dict)
-        self._expand([f"{table_name}/trees", f"{table_name}/data"], numtrees)
+        self._expand([f"{table_name}/trees"], numtrees)
 
         # Add the tree metadata to the file
-        data_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["data"]["dtype"]
-        tree_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["trees"]["dtype"]
+        data_dtype = self._dtype(f"{DNAStream.TREE}/{tree_type}_trees/metadata")
+        tree_dtype = self._dtype(f"{DNAStream.TREE}/{tree_type}_trees/trees")
+
         if not scores:
             dat = np.array(
                 [(lab, method, np.nan, -1, source_file) for lab in tree_dict],
@@ -1196,7 +1225,7 @@ class DNAStream:
                 dtype=data_dtype,
             )
 
-        self.file[f"{table_name}/data"][tree_indices] = dat
+        self.file[f"{table_name}/metadata"][tree_indices] = dat
 
         tree_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["trees"]["dtype"]
         tree_structured = np.array(
@@ -1274,7 +1303,7 @@ class DNAStream:
         try:
             source_file = str(pathlib.Path(fname).resolve())
 
-            dataset_name = f"{DNAStream.TREE}/{tree_type}_trees/data"
+            dataset_name = f"{DNAStream.TREE}/{tree_type}_trees/metadata"
 
             if self.safe and not self._check_safe(dataset_name, source_file):
                 print(
@@ -1323,7 +1352,8 @@ class DNAStream:
         - The function logs modifications to the SNV tree dataset.
         - The tree is added with metadata including method, score, and rank.
         """
-        data_dtype = SCHEMA[DNAStream.TREE]["SNV_trees"]["data"]
+        data_dtype =self._dtype(f"{DNAStream.TREE}/SNV_trees/metadata")
+    
         dat = np.array([("", method, score, rank, "")], dtype=data_dtype)
         self._add_trees(edge_list, "SNV", data=dat)
         self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
@@ -1411,7 +1441,7 @@ class DNAStream:
 
         if sources is not None:
             sample_indices = self._extract_indices_by_column(
-                "sample/data", "source", sources
+                "sample/metadata", "source", sources
             )
         elif sample_labels is not None:
 
@@ -1423,6 +1453,110 @@ class DNAStream:
             )
             for table in tables
         }
+
+
+    def add_copy_numbers(self, labels, values, source_file=""):
+        """
+        Add copy number data to the HDF5 dataset.
+
+        Parameters
+        ----------
+        labels : list of str
+            List of copy number labels.
+        values : list of float
+            List of copy number values.
+        source_file : str, optional
+            Path to the source file from which the copy numbers are being added (default is an empty string).
+
+        Raises
+        ------
+        Exception
+            If there is an error processing the file or adding copy numbers.
+
+        Notes
+        -----
+        - The function checks if copy numbers from the source file already exist.
+        - Logs dataset modifications after adding copy numbers.
+        """
+        try:
+            source_file = str(pathlib.Path(source_file).resolve())
+
+            dataset_name = f"{DNAStream.COPY_NUMBER}/metadata"
+
+            if self.safe and not self._check_safe(dataset_name, source_file):
+                print(
+                    "#Warning! Attempting overwrite in Safe mode, use safe=F, to force append copy numbers."
+                )
+                return
+
+            copy_number_dict = self.local_idx[dataset_name].resize(
+                len(labels), prefix="copy_number"
+            )
+
+            copy_number_indices = list(copy_number_dict.values())
+
+            num_copy_numbers = len(copy_number_dict)
+            self._expand([f"{dataset_name}/metadata"], num_copy_numbers)
+
+            # Add the copy number metadata to the file
+            data_dtype = self._dtype(f"{DNAStream.COPY_NUMBER}/metadata")
+            #SCHEMA[DNAStream.COPY_NUMBER]["data"]["dtype"]
+            dat = np.array(
+                [(lab, val, source_file) for lab, val in zip(copy_number_dict, values)],
+                dtype=data_dtype,
+            )
+
+            self.file[f"{dataset_name}"][copy_number_indices] = dat
+
+            self._log_dataset_modification(
+                f"{DNAStream.COPY_NUMBER}/metadata", "update", source_file=source_file
+            )
+
+        except Exception as e:
+            self.close()
+            raise Exception(e)
+        
+    def parse_battenberg_file(self, fname, sample_label):
+
+        """
+        Parse a Battenberg file and extract the copy number data.
+
+        Parameters
+        ----------
+        fname : str
+            Path to the Battenberg file to parse.   
+        """
+        #  Column	Description
+        # chr	The chromosome of the segment
+        # startpos	Start position on the chromosome
+        # endpos	End position on the chromosome
+        # BAF	The B-allele frequency of the segment
+        # pval	P-value that is obtained when testing whether this segment should be represented by one or two states. A low p-value will result in the fitting of a second copy number state
+        # LogR	The log ratio of normalised tumour coverage versus its matched normal sequencing sample
+        # ntot	An internal total copy number value used to determine the priority of solutions. NOTE: This is not the total copy number of this segment!
+        # nMaj1_A	The major allele copy number of state 1 from solution A
+        # nMin1_A	The minor allele copy number of state 1 from solution A
+        # frac1_A	Fraction of tumour cells carrying state 1 in solution A
+        # nMaj2_A	The major allele copy number of state 2 from solution A. This value can be NA
+        # nMin2_A	The minor allele copy number of state 2 from solution A. This value can be NA
+        # frac2_A	Fraction of tumour cells carrying state 2 in solution A. This value can be NA
+        # SDfrac_A	Standard deviation on the BAF of SNPs in this segment, can be used as a measure of uncertainty
+        # SDfrac_A_BS	Bootstrapped standard deviation
+        # frac1_A_0.025	Associated 95% confidence interval of the bootstrap measure of uncertainty
+        try:
+            df = pd.read_csv(fname, sep="\t")
+
+            self.add_sample(sample_label, data={"source": "battenberg"}, overwrite=True)
+
+            # cn_labels = df[['chr', 'startpos', 'endpos']].astype(str).agg(':'.join, axis=1).unique().tolist()
+
+            # self.lo
+            
+            # self.add_copy_numbers(cn_labels, cn_values, source_file=fname)
+
+        except Exception as e:
+            self.close()
+            raise Exception(e)
 
     def initialize_pseudobulk_layer(self, sample_label, source_file=""):
         """
@@ -1436,12 +1570,15 @@ class DNAStream:
             f"copy_numbers/{sample_label}", operation="create", source_file=source_file
         )
 
+
     def close(self):
         """
         Close the HDF5 file safely.
 
         This should be called when finished working with the DNAStream object.
         """
+        for _, global_idx in self.global_idx.items():
+            global_idx.save_index()
 
         self.file.close()
         if self.verbose:

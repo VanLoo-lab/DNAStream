@@ -1,4 +1,4 @@
-# Description: This file contains the schema for the DNAStream data model.
+# Description: This file contains the schema for the DNAStream metadata model.
 import h5py
 from .datatypes import (
     STR_DTYPE,
@@ -15,9 +15,10 @@ from .datatypes import (
 
 MODALITIES = ["bulk", "lcm", "scdna"]
 
-STRUCT_ARRAYS = ["log", "data"]
+STRUCT_ARRAYS = ["log", "metadata"]
 
-META_TABLES = ["data", "cluster"]
+META_TABLES = ["metadata", "cluster"]
+
 
 
 INDEX_DICT = {
@@ -60,8 +61,13 @@ COPY_NUMBER_LAYER_DICT = {
         "maxshape": (None, None),
         "chunks": (100, 100),
     },
-    "data": SEGMENT_LABEL_DTYPE,
-    "labels": LABEL_DICT,
+    "metadata":  {
+            "dtype": SEGMENT_LABEL_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+    "labels": LABEL_DICT
     # TODO: add metadata
 }
 
@@ -74,14 +80,16 @@ SCHEMA = {
             "chunks": (100,),
         }
     },
-    "SNV": {
+    "index" : 
+    {
+        "SNV": {
         "cluster": {
             "dtype": "i8",
             "shape": (0,),
             "maxshape": (None,),
             "chunks": (100,),
         },
-        "data": {
+        "metadata": {
             "dtype": SNV_DTYPE,
             "shape": (0,),
             "maxshape": (None,),
@@ -103,7 +111,7 @@ SCHEMA = {
             "maxshape": (None,),
             "chunks": (100,),
         },
-        "data": {
+        "metadata": {
             "dtype": SAMPLE_DTYPE,
             "shape": (0,),
             "maxshape": (None,),
@@ -125,7 +133,7 @@ SCHEMA = {
             "maxshape": (None,),
             "chunks": (100,),
         },
-        "data": {
+        "metadata": {
             "dtype": SNV_DTYPE,
             "shape": (0,),
             "maxshape": (None,),
@@ -133,6 +141,7 @@ SCHEMA = {
         },
         "labels": LABEL_DICT,
         "log": LOG_DICT,
+    }
     },
     "tree": {
         "SNV_trees": {
@@ -142,7 +151,7 @@ SCHEMA = {
                 "maxshape": (None,),
                 "chunks": (50,),
             },
-            "data": {
+            "metadata": {
                 "dtype": TREE_DTYPE,
                 "shape": (0,),
                 "maxshape": (None,),
@@ -157,7 +166,7 @@ SCHEMA = {
                 "maxshape": (None,),
                 "chunks": (50,),
             },
-            "data": {
+            "metadata": {
                 "dtype": TREE_DTYPE,
                 "shape": (0,),
                 "maxshape": (None,),
