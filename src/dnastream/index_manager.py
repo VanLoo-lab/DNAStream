@@ -12,7 +12,7 @@ from .datatypes import LOG_DTYPE
 class BaseIndex:
     """Base class for handling index storage in an HDF5 dataset."""
 
-    def __init__(self, file, name, metadata_dtype, verbose=False):
+    def __init__(self, file, name, metadata_dtype, tracked_tables=None, verbose=False):
         """
         Initialize an index object.
 
@@ -45,6 +45,7 @@ class BaseIndex:
                 shape=(0,),
                 maxshape=(None,),
                 dtype=h5py.string_dtype("utf-8"),
+                chunks=True,
             )
 
         if self.dat_name not in self.file:
@@ -54,6 +55,7 @@ class BaseIndex:
                 shape=(0,),
                 maxshape=(None,),
                 dtype=self.dat_dtype,
+                chunks=True,
             )
             self.file[self.dat_name].attrs["columns"] = self.dat_dtype.names
 
@@ -64,6 +66,12 @@ class BaseIndex:
         self._labels_cache = list(self.labels[:])  # Convert NumPy array to list
         self._index_cache = {lab: i for i, lab in enumerate(self._labels_cache)}
         self._metadata_cache = self.metadata[:]  # numpy array
+
+        # Initialize tracked tables
+        self.tracked_tables = {}
+        if tracked_tables:
+            for table_name, axis in tracked_tables:
+                self.add_tracked_table(table_name, axis)
 
     def size(self):
         """Return the number of labels in the index."""
@@ -107,6 +115,17 @@ class BaseIndex:
         else:
             raise ValueError(f"Unhandled metadata field type: {field_type}")
 
+    def add_tracked_table(self, table_name, axis):
+        if table_name not in self.file:
+            raise ValueError(f"Dataset {table_name} must already exists in file.")
+
+        if self.file[table_name].shape[axis] != self.size():
+            raise ValueError(
+                f"Dataset {table_name} shape for axis {axis} does not match the size of the current index."
+            )
+
+        self.tracked_tables[table_name] = axis
+
     def add(self, labels, metadata={}):
         """
         Add multiple labels to the index.
@@ -116,14 +135,15 @@ class BaseIndex:
         labels : list of str
             List of new labels to be added.
         """
-        new_idx = self.size()
+        pre_size = self.size()
+        post_size = self.size()
         added_indices = {}
         for label in labels:
             if label not in self._index_cache:  # Avoid duplicates
                 self._labels_cache.append(label)
-                self._index_cache[label] = new_idx
-                added_indices[label] = new_idx
-                new_idx += 1
+                self._index_cache[label] = post_size
+                added_indices[label] = post_size
+                post_size += 1
                 self._modified = True  # Mark dataset as modified
 
         new_metadata = np.zeros(len(added_indices), dtype=self.dat_dtype)
@@ -140,6 +160,9 @@ class BaseIndex:
 
         # Insert new metadata into the cache
         self._metadata_cache = np.concatenate((self._metadata_cache, new_metadata))
+
+        if pre_size != post_size:
+            self._resize_tracked_tables(post_size)
 
         self._save_index()  # Save if modified
         return {label: self._index_cache[label] for label in labels}
@@ -201,6 +224,21 @@ class BaseIndex:
         labels = [f"{prefix}_{i}" for i in range(new_idx, new_idx + num)]
         return self.add(labels)
 
+    def _resize_tracked_tables(self, new_size):
+        """Resize all tables tracked by this index when its size changes."""
+
+        for table_name, axis in self.tracked_tables.items():
+            if table_name in self.file:
+                shape = list(self.file[table_name].shape)
+                if shape[axis] != new_size:
+                    shape[axis] = new_size  # Resize only the correct axis
+                    self.file[table_name].resize(tuple(shape))
+            else:
+                if self.verbose:
+                    print(
+                        f"Warning {table_name} not in file! skipping resizing. Modify tracked tables for {self.group} index to suppress this warning."
+                    )
+
     def get_metadata(self, label):
         """Get metadata for a given label.
 
@@ -217,8 +255,8 @@ class BaseIndex:
 class GlobalIndex(BaseIndex):
     """Handles global indices (SNV, sample)."""
 
-    def __init__(self, file, name, metadata_dtype, verbose=False):
-        super().__init__(file, name, metadata_dtype, verbose)
+    def __init__(self, file, name, metadata_dtype, tracked_tables, verbose=False):
+        super().__init__(file, name, metadata_dtype, tracked_tables, verbose)
         self.log_name = f"{self.group}/log"
         self.cluster_name = f"{self.group}/cluster"
         self.log_header = [
@@ -311,6 +349,7 @@ class GlobalIndex(BaseIndex):
             self.update_cluster(cluster_dict)
 
         if post_size > pre_size:
+            # Resize dependent datasets
             self._update_index_log(
                 post_size - pre_size, pre_size, post_size, "add", source_file
             )

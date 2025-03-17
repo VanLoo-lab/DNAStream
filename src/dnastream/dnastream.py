@@ -20,6 +20,7 @@ from .schema import (
     META_TABLES,
     MODALITIES,
     COPY_NUMBER_LAYER_DICT,
+    get_schema_value,
 )
 from .datatypes import EDGE_LIST_DTYPE
 
@@ -198,11 +199,17 @@ class DNAStream:
                 self.file,
                 f"index/{name}",
                 metadata_dtype=SCHEMA["index"][name]["metadata"]["dtype"],
+                tracked_tables=SCHEMA["index"][name]["tracked_tables"],
             )
             for name in SCHEMA["index"].keys()
         }
         self.local_idx = {
-            name: BaseIndex(self.file, name, metadata_dtype=self._local_idx_dtype(name))
+            name: BaseIndex(
+                self.file,
+                name,
+                metadata_dtype=self._local_idx_dtype(name),
+                tracked_tables=get_schema_value(name, "tracked_tables", []),
+            )
             for name in DNAStream.LOCAL_INDICES
         }
         # Create group structure for read counts

@@ -1,9 +1,9 @@
 # TODO list
 
 ## Testing  
-- add test script for index_manager.py
+<!-- - add test script for index_manager.py -->
 - test adding pseudobulk layers
-- test adding a global index
+<!-- - test adding a global index -->
 
 
 ## I/O Functions
@@ -14,7 +14,7 @@
 
 ## Data structure
 - add layer for lcm coordinates
-- map global indices to controlled datasets and have index changes trigger resizing of controlled tables
+<!-- - map global indices to controlled datasets and have index changes trigger resizing of controlled tables -->
 
 
 ## API/Readme

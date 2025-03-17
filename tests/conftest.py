@@ -23,6 +23,13 @@ def temp_h5_stream(temp_h5_file):
     """Fixture to create a temporary HDF5 file for testing."""
 
     with h5py.File(temp_h5_file, "a") as f:
+        f.create_dataset(
+            "read_counts",
+            shape=(0, 0),
+            dtype="i",
+            maxshape=(None, None),
+            chunks=(1, 5000),
+        )
         yield f
         f.close()
 
@@ -32,7 +39,11 @@ def base_index(temp_h5_stream):
     """Fixture to create a BaseIndex instance."""
 
     yield BaseIndex(
-        temp_h5_stream, name="index/SNV", metadata_dtype=SNV_DTYPE, verbose=True
+        temp_h5_stream,
+        name="index/SNV",
+        metadata_dtype=SNV_DTYPE,
+        verbose=True,
+        tracked_tables=[("read_counts", 0)],
     )
 
 
@@ -53,5 +64,9 @@ def global_index(temp_h5_stream):
     """Fixture to create a BaseIndex instance."""
 
     yield GlobalIndex(
-        temp_h5_stream, name="index/SNV", metadata_dtype=SNV_DTYPE, verbose=True
+        temp_h5_stream,
+        name="index/SNV",
+        metadata_dtype=SNV_DTYPE,
+        tracked_tables=[("read_counts", 0)],
+        verbose=True,
     )

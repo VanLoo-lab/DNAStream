@@ -95,6 +95,7 @@ SCHEMA = {
             },
             "labels": LABEL_DICT,
             "log": LOG_DICT,
+            "tracked_tables": [("read_counts/variant", 0), ("read_counts/total", 0)],
         },
         "sample": {
             "label": {
@@ -117,6 +118,16 @@ SCHEMA = {
             },
             "labels": LABEL_DICT,
             "log": LOG_DICT,
+            "tracked_tables": [
+                (f"{ctab}/{ctype}", 1)
+                for ctab in ["read_counts", "allele_counts"]
+                for ctype in ["variant", "total"]
+            ]
+            + [
+                (f"copy_numbers/{s}/{ctab}", 1)
+                for ctab in ["profile", "logr", "baf"]
+                for s in MODALITIES
+            ],
         },
         "SNP": {
             "label": {
@@ -139,6 +150,10 @@ SCHEMA = {
             },
             "labels": LABEL_DICT,
             "log": LOG_DICT,
+            "tracked_tables": [
+                ("allele_counts/variant", 0),
+                ("allele_counts/total", 0),
+            ],
         },
     },
     "tree": {
@@ -156,6 +171,7 @@ SCHEMA = {
                 "chunks": (50,),
             },
             "labels": LABEL_DICT,
+            "tracked_tables": [("tree/SNV_trees/trees", 0)],
         },
         "CNA_trees": {
             "trees": {
@@ -171,6 +187,7 @@ SCHEMA = {
                 "chunks": (50,),
             },
             "labels": LABEL_DICT,
+            "tracked_tables": [("tree/CNA_trees/trees", 0)],
         },
     },
     "copy_numbers": {s: COPY_NUMBER_LAYER_DICT for s in MODALITIES},
@@ -189,4 +206,56 @@ SCHEMA = {
         },
         "log": LOG_DICT,
     },
+    "allele_counts": {
+        "variant": {
+            "dtype": "i",
+            "shape": (0, 0),
+            "maxshape": (None, None),
+            "chunks": (1, 5000),  # Optimized for row-wise updates
+        },
+        "total": {
+            "dtype": "i",
+            "shape": (0, 0),
+            "maxshape": (None, None),
+            "chunks": (1, 5000),
+        },
+        "log": LOG_DICT,
+    },
 }
+
+# add tracking for local segment index along axis 0
+for s in MODALITIES:
+    SCHEMA["copy_numbers"][s]["tracked_tables"] = []
+    for tab in ["profile", "logr", "baf"]:
+        SCHEMA["copy_numbers"][s]["tracked_tables"].append(
+            (f"copy_numbers/{s}/{tab}", 0)
+        )
+
+
+def get_schema_value(path, key, default=None):
+    """
+    Retrieve a value from SCHEMA based on a given HDF5-like path.
+
+    Parameters
+    ----------
+    path : str
+        The hierarchical path in the SCHEMA dictionary (e.g., "index/SNV").
+    key : str
+        The specific key to retrieve within the resolved SCHEMA dictionary.
+    default : any, optional
+        The default value to return if the key is not found (default is None).
+
+    Returns
+    -------
+    any
+        The value associated with the key in SCHEMA, or the default if not found.
+    """
+    parts = path.split("/")
+    schema_section = SCHEMA
+
+    for part in parts:
+        schema_section = schema_section.get(part, {})
+        if not isinstance(schema_section, dict):
+            return default  # Stop if we hit a non-dict value
+
+    return schema_section.get(key, default)
