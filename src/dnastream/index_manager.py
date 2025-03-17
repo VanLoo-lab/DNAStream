@@ -1,16 +1,18 @@
 import json
+import time
 import pathlib
 import getpass
 import socket
 from datetime import datetime
 import h5py
 import numpy as np
+from .datatypes import LOG_DTYPE
 
 
 class BaseIndex:
     """Base class for handling index storage in an HDF5 dataset."""
 
-    def __init__(self, file, name, metadata_dtype="", verbose=False):
+    def __init__(self, file, name, metadata_dtype, verbose=False):
         """
         Initialize an index object.
 
@@ -34,6 +36,7 @@ class BaseIndex:
         self.dat_name = f"{self.group}/metadata"
         self.dat_dtype = metadata_dtype
         self._modified = False
+        self.last_saved_timestamp = None
 
         # Ensure the index dataset exists
         if self.label_name not in self.file:
@@ -45,6 +48,7 @@ class BaseIndex:
             )
 
         if self.dat_name not in self.file:
+
             self.file.create_dataset(
                 self.dat_name,
                 shape=(0,),
@@ -79,6 +83,14 @@ class BaseIndex:
             self.labels[:] = self._labels_cache  # Update HDF5 dataset
             self.metadata[:] = self._metadata_cache  # Expand dataset
             self._modified = False  # Reset modification flag
+
+            # Update last saved timestamp
+            self.last_saved_timestamp = time.time()
+
+            if self.verbose:
+                print(
+                    f"Index saved at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.last_saved_timestamp))}"
+                )
 
     def _default_metadata_value(self, field):
         """Returns a default value for missing metadata fields based on dtype."""
@@ -209,13 +221,23 @@ class GlobalIndex(BaseIndex):
         super().__init__(file, name, metadata_dtype, verbose)
         self.log_name = f"{self.group}/log"
         self.cluster_name = f"{self.group}/cluster"
+        self.log_header = [
+            "Timestamp",
+            "Entries Added",
+            "Pre-size",
+            "Post-size",
+            "Operation",
+            "User",
+            "Host",
+            "Source File",
+        ]
 
         # Check if datasets exist, create if not
         if self.log_name not in self.file:
             self.file.create_dataset(
-                self.log_name, (0,), maxshape=(None,), dtype=h5py.string_dtype("utf-8")
+                self.log_name, (0,), maxshape=(None,), dtype=LOG_DTYPE
             )
-            self.file[self.log_name].attrs["columns"] = self.dat_dtype.names
+            self.file[self.log_name].attrs["columns"] = self.log_header
 
         if self.cluster_name not in self.file:
             self.file.create_dataset(
@@ -223,6 +245,7 @@ class GlobalIndex(BaseIndex):
             )
 
         self.log = self.file[self.log_name]
+        self._update_index_log(0, 0, 0, "create")
         self.cluster = self.file[self.cluster_name]
 
     def get_log(self):
@@ -261,7 +284,7 @@ class GlobalIndex(BaseIndex):
         for label, cluster in cluster_dict.items():
             self.update_cluster(label, cluster)
 
-    def add(self, labels, metadata=None, clusters=None, source_file=""):
+    def add(self, labels, metadata={}, clusters=None, source_file=""):
         """
         Add multiple labels and log the operation.
 
@@ -314,6 +337,7 @@ class GlobalIndex(BaseIndex):
         - The log entry includes a timestamp, the operation type, the user, and the hostname.
         - The log dataset is resized dynamically to accommodate new entries.
         """
+
         source_file = str(pathlib.Path(source_file).resolve())
 
         current_size = self.log.shape[0]
@@ -323,10 +347,51 @@ class GlobalIndex(BaseIndex):
         user = getpass.getuser()
         hostname = socket.gethostname()
 
-        log_entry = f"{timestamp_str},{num},{pre_size},{post_size},{operation},{user},{hostname},{source_file}"
+        log_entry = np.array(
+            [
+                (
+                    timestamp_str,
+                    num,
+                    pre_size,
+                    post_size,
+                    operation,
+                    user,
+                    hostname,
+                    source_file,
+                )
+            ],
+            dtype=LOG_DTYPE,
+        )
         self.log[current_size] = log_entry
 
     def save_index(self):
         """Force save the index to disk."""
         self._modified = True
         self._save_index()
+
+    def print_log(self):
+        """
+        Print the index log in a readable table format.
+        """
+        if self.log.shape[0] == 0:
+            print("Log is empty.")
+            return
+
+        # Extract field names dynamically from dtype
+        headers = self.log.dtype.names
+        col_widths = [
+            max(len(h), 12) for h in headers
+        ]  # Ensure minimum width for readability
+
+        # Print headers
+        header_str = " | ".join(h.ljust(w) for h, w in zip(headers, col_widths))
+        print(header_str)
+        print("-" * len(header_str))  # Separator line
+
+        # Print log entries
+        for entry in self.log:
+            values = [
+                str(entry[h]) for h in headers
+            ]  # Convert structured array row to list of strings
+            formatted_entry = " | ".join(v.ljust(w) for v, w in zip(values, col_widths))
+            print(formatted_entry)

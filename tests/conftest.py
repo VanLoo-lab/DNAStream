@@ -1,6 +1,9 @@
 import os
 import pytest
+import h5py
 from dnastream import DNAStream
+from dnastream.index_manager import BaseIndex, GlobalIndex
+from dnastream.datatypes import SNV_DTYPE, STR_DTYPE
 
 # Define test data directory
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -16,6 +19,24 @@ def temp_h5_file():
 
 
 @pytest.fixture
+def temp_h5_stream(temp_h5_file):
+    """Fixture to create a temporary HDF5 file for testing."""
+
+    with h5py.File(temp_h5_file, "a") as f:
+        yield f
+        f.close()
+
+
+@pytest.fixture
+def base_index(temp_h5_stream):
+    """Fixture to create a BaseIndex instance."""
+
+    yield BaseIndex(
+        temp_h5_stream, name="index/SNV", metadata_dtype=SNV_DTYPE, verbose=True
+    )
+
+
+@pytest.fixture
 def dnastream_obj(temp_h5_file):
     """Provides a DNAStream instance for testing."""
     return DNAStream(temp_h5_file, initialize=True, verbose=False)
@@ -25,3 +46,12 @@ def dnastream_obj(temp_h5_file):
 def tree_file():
     """Provides the path to the tree file for testing."""
     return os.path.join(TEST_DATA_DIR, "trees.txt")
+
+
+@pytest.fixture
+def global_index(temp_h5_stream):
+    """Fixture to create a BaseIndex instance."""
+
+    yield GlobalIndex(
+        temp_h5_stream, name="index/SNV", metadata_dtype=SNV_DTYPE, verbose=True
+    )
