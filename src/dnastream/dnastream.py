@@ -164,7 +164,7 @@ class DNAStream:
     SNV = "SNV"
     SNP = "SNP"
     SAMPLE = "sample"
-    TREE = "tree"
+    TREE = "trees"
     CNA = "CNA"
     CLONAL = "CLONAL"
 
@@ -269,6 +269,7 @@ class DNAStream:
             "get_log": "get_{}_log",
             "get_metadata": "get_{}_metadata",
             "label_to_idx": "{}_label_to_idx",
+            "resize": "{}_resize",
         }
 
         for attr, method_template in methods.items():
@@ -340,6 +341,7 @@ class DNAStream:
             "get_index": "get_{}_index",
             "get_metadata": "get_{}_metadata",
             "label_to_idx": "{}_label_to_idx",
+            "resize": "{}_resize",
         }
 
         for attr, method_template in methods.items():
@@ -1161,6 +1163,7 @@ class DNAStream:
         n : int
             the amount of additional space to allocate
         """
+        table_list = wrap_list(table_list)
         for table in table_list:
             old_size = self.file[table].shape[0]
             new_size = old_size + n
@@ -1205,20 +1208,20 @@ class DNAStream:
         source_file : str, optional
             Path to the source file from which the trees are being added (default is an empty string).
         """
-        table_name = f"{DNAStream.TREE}/{tree_type}_trees"
+        table_name = f"{DNAStream.TREE}/{tree_type}"
         tree_list = wrap_list(tree_list)
 
-        tree_dict = self.local_idx[table_name].resize(len(tree_list), prefix="snv_tree")
+        tree_dict = self.trees_snv_resize(len(tree_list), prefix="snv_tree")
 
         tree_indices = list(tree_dict.values())
 
         numtrees = len(tree_dict)
-        self._expand([f"{table_name}/trees"], numtrees)
+        self._expand(table_name, numtrees)
 
         # Add the tree metadata to the file
-        data_dtype = self.get_dtype(f"{DNAStream.TREE}/{tree_type}_trees/metadata")
-        tree_dtype = self.get_dtype(f"{DNAStream.TREE}/{tree_type}_trees/trees")
-
+        data_dtype = LOCAL_INDEX[f"trees_{tree_type}"]["metadata"]["dtype"]
+        tree_dtype = self.get_dtype(f"{DNAStream.TREE}/{tree_type}")
+        print("HERE!")
         if not scores:
             dat = np.array(
                 [(lab, method, np.nan, -1, source_file) for lab in tree_dict],
@@ -1233,17 +1236,16 @@ class DNAStream:
                 dtype=data_dtype,
             )
 
-        self.file[f"{table_name}/metadata"][tree_indices] = dat
-
-        tree_dtype = SCHEMA[DNAStream.TREE][f"{tree_type}_trees"]["trees"]["dtype"]
+        # self.file[f"{table_name}/metadata"][tree_indices] = dat
+        # SCHEMA[DNAStream.TREE][f"{tree_type}_"]["trees"]["dtype"]
         tree_structured = np.array(
             [np.array(tree, dtype=EDGE_LIST_DTYPE) for tree in tree_list],
             dtype=tree_dtype,
         )
-        self.file[f"{table_name}/trees"][tree_indices] = tree_structured
+        self.file[f"{DNAStream.TREE}/{tree_type}"][tree_indices] = tree_structured
 
         self._log_dataset_modification(
-            f"{DNAStream.TREE}/{tree_type}_trees", "update", source_file=source_file
+            f"{DNAStream.TREE}/{tree_type}", "update", source_file=source_file
         )
 
     def _search_data_by_filename(self, dataset_name, fname):
@@ -1311,13 +1313,13 @@ class DNAStream:
         try:
             source_file = str(pathlib.Path(fname).resolve())
 
-            dataset_name = f"{DNAStream.TREE}/{tree_type}_trees/metadata"
+            dataset_name = f"local_index/{DNAStream.TREE}/{tree_type}/metadata"
 
-            if self.safe and not self._check_safe(dataset_name, source_file):
-                print(
-                    "#Warning! Attempting overwrite in Safe mode, use safe=F, to force append trees."
-                )
-                return
+            # if self.safe and not self._check_safe(dataset_name, source_file):
+            #     print(
+            #         "#Warning! Attempting overwrite in Safe mode, use safe=F, to force append trees."
+            #     )
+            #     return
 
             # Parse tree file according to method
             if self.verbose:
@@ -1360,9 +1362,10 @@ class DNAStream:
         - The function logs modifications to the SNV tree dataset.
         - The tree is added with metadata including method, score, and rank.
         """
-        data_dtype = self.get_dtype(f"{DNAStream.TREE}/SNV_trees/metadata")
+        data_dtype = LOCAL_INDEX["trees_SNV"]["metadata"]["dtype"]
 
         dat = np.array([("", method, score, rank, "")], dtype=data_dtype)
+
         self._add_trees(edge_list, "SNV", data=dat)
         self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
 

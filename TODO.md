@@ -16,6 +16,10 @@
 ## Data structure
 - add layer for lcm coordinates
 - store path to bam files for each sample
+- fix metadata management
+
+## Table modification features
+- fix safe mode
 
 <!-- - map global indices to controlled datasets and have index changes trigger resizing of controlled tables -->
 
