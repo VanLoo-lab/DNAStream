@@ -9,7 +9,7 @@
 
 ## I/O Functions
 - parse_battenberg_file
-- parse_pyclone
+<!-- - parse_pyclone -->
 - parse_vcf_file
 - parse ascat output
 
@@ -23,5 +23,6 @@
 ## API/Readme
 - add example for adding SNV trees by edge lists 
 - add example for adding a global index (only allow new tables to be controlled for now.)
+- fix docs for factory functions accessing GlobalIndex
 
 

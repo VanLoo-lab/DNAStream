@@ -2,7 +2,7 @@ import os
 import pytest
 import h5py
 from dnastream import DNAStream
-from dnastream.index_manager import BaseIndex, GlobalIndex
+from dnastream.index_manager import LocalIndex, GlobalIndex
 from dnastream.datatypes import SNV_DTYPE, STR_DTYPE
 
 # Define test data directory
@@ -38,7 +38,7 @@ def temp_h5_stream(temp_h5_file):
 def base_index(temp_h5_stream):
     """Fixture to create a BaseIndex instance."""
 
-    yield BaseIndex(
+    yield LocalIndex(
         temp_h5_stream,
         name="index/SNV",
         metadata_dtype=SNV_DTYPE,

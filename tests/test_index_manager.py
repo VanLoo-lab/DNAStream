@@ -1,5 +1,4 @@
-import h5py
-import numpy as np
+from dnastream.datatypes import SNV_DTYPE
 
 
 def test_base_index_init(base_index):
@@ -55,3 +54,18 @@ def test_save_index(global_index):
     assert (
         global_index.last_saved_timestamp is not None
     ), "Timestamp should be set after saving!"
+
+
+def test_factory_create(dnastream_obj):
+    """Test creating an index factory."""
+    dnastream_obj.create_global_index("foo", metadata_dtype=SNV_DTYPE)
+    dnastream_obj.batch_foo_add(["foo1", "foo2"])
+    assert dnastream_obj.get_foo_size() == 2, "Index should have 2 elements!"
+    # assert (
+    #     dnastream_obj.get_foo_clusters() == {"foo1": }
+    # ), "No clusters should be present in the index!"
+    assert dnastream_obj.get_foo_log().shape[0] > 1, "Log should have more than entry!"
+    assert dnastream_obj.get_foo_labels() == ["foo1", "foo2"], "Labels should match!"
+    assert (
+        dnastream_obj.get_foo_metadata().shape[0] == 2
+    ), "Metadata should have 2 rows!"

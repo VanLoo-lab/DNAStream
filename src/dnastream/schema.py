@@ -27,6 +27,7 @@ INDEX_DICT = {
     "chunks": (100,),  # Chunking for efficient index expansion
 }
 
+
 LOG_DICT = {
     "dtype": LOG_DTYPE,
     "shape": (0,),
@@ -60,15 +61,118 @@ COPY_NUMBER_LAYER_DICT = {
         "maxshape": (None, None),
         "chunks": (100, 100),
     },
-    "metadata": {
-        "dtype": SEGMENT_LABEL_DTYPE,
-        "shape": (0,),
-        "maxshape": (None,),
-        "chunks": (100,),
-    },
-    "labels": LABEL_DICT,
-    # TODO: add metadata
 }
+
+GLOBAL_INDEX = {
+    "SNV": {
+        "cluster": {
+            "dtype": "i8",
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+        "metadata": {
+            "dtype": SNV_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+        "labels": LABEL_DICT,
+        "log": LOG_DICT,
+        "tracked_tables": [("read_counts/variant", 0), ("read_counts/total", 0)],
+    },
+    "sample": {
+        "label": {
+            "dtype": STR_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+        "cluster": {
+            "dtype": "i8",
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+        "metadata": {
+            "dtype": SAMPLE_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+        "labels": LABEL_DICT,
+        "log": LOG_DICT,
+        "tracked_tables": [
+            (f"{ctab}/{ctype}", 1)
+            for ctab in ["read_counts", "allele_counts"]
+            for ctype in ["variant", "total"]
+        ]
+        + [
+            (f"copy_numbers/{s}/{ctab}", 1)
+            for ctab in ["profile", "logr", "baf"]
+            for s in MODALITIES
+        ],
+    },
+    "SNP": {
+        "label": {
+            "dtype": STR_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+        "cluster": {
+            "dtype": "i8",
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+        "metadata": {
+            "dtype": SNV_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (100,),
+        },
+        "labels": LABEL_DICT,
+        "log": LOG_DICT,
+        "tracked_tables": [
+            ("allele_counts/variant", 0),
+            ("allele_counts/total", 0),
+        ],
+    },
+}
+
+LOCAL_INDEX = {
+    f"trees_{t}": {
+        "metadata": {
+            "dtype": TREE_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (50,),
+        },
+        "labels": LABEL_DICT,
+        "tracked_tables": [(f"trees/{t}", 0)],
+    }
+    for t in ["SNV", "CNA", "CLONAL"]
+}
+
+
+LOCAL_INDEX.update(
+    {
+        f"copy_numbers_{mod}": {
+            "metadata": {
+                "dtype": SEGMENT_LABEL_DTYPE,
+                "shape": (0,),
+                "maxshape": (None,),
+                "chunks": (100,),
+            },
+            "labels": LABEL_DICT,
+            "tracked_tables": [
+                (f"copy_numbers/{mod}/{tab}", 0) for tab in ["profile", "logr", "baf"]
+            ],
+        }
+        for mod in MODALITIES
+    }
+)
 
 SCHEMA = {
     "metadata": {
@@ -79,115 +183,24 @@ SCHEMA = {
             "chunks": (100,),
         }
     },
-    "index": {
+    "trees": {
         "SNV": {
-            "cluster": {
-                "dtype": "i8",
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "metadata": {
-                "dtype": SNV_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "labels": LABEL_DICT,
-            "log": LOG_DICT,
-            "tracked_tables": [("read_counts/variant", 0), ("read_counts/total", 0)],
+            "dtype": VLEN_EDGE_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (50,),
         },
-        "sample": {
-            "label": {
-                "dtype": STR_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "cluster": {
-                "dtype": "i8",
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "metadata": {
-                "dtype": SAMPLE_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "labels": LABEL_DICT,
-            "log": LOG_DICT,
-            "tracked_tables": [
-                (f"{ctab}/{ctype}", 1)
-                for ctab in ["read_counts", "allele_counts"]
-                for ctype in ["variant", "total"]
-            ]
-            + [
-                (f"copy_numbers/{s}/{ctab}", 1)
-                for ctab in ["profile", "logr", "baf"]
-                for s in MODALITIES
-            ],
+        "CNA": {
+            "dtype": STR_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (50,),
         },
-        "SNP": {
-            "label": {
-                "dtype": STR_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "cluster": {
-                "dtype": "i8",
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "metadata": {
-                "dtype": SNV_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "labels": LABEL_DICT,
-            "log": LOG_DICT,
-            "tracked_tables": [
-                ("allele_counts/variant", 0),
-                ("allele_counts/total", 0),
-            ],
-        },
-    },
-    "tree": {
-        "SNV_trees": {
-            "trees": {
-                "dtype": VLEN_EDGE_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (50,),
-            },
-            "metadata": {
-                "dtype": TREE_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (50,),
-            },
-            "labels": LABEL_DICT,
-            "tracked_tables": [("tree/SNV_trees/trees", 0)],
-        },
-        "CNA_trees": {
-            "trees": {
-                "dtype": STR_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (50,),
-            },
-            "metadata": {
-                "dtype": TREE_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (50,),
-            },
-            "labels": LABEL_DICT,
-            "tracked_tables": [("tree/CNA_trees/trees", 0)],
+        "CLONAL": {
+            "dtype": STR_DTYPE,
+            "shape": (0,),
+            "maxshape": (None,),
+            "chunks": (50,),
         },
     },
     "copy_numbers": {s: COPY_NUMBER_LAYER_DICT for s in MODALITIES},
@@ -204,7 +217,6 @@ SCHEMA = {
             "maxshape": (None, None),
             "chunks": (1, 5000),
         },
-        "log": LOG_DICT,
     },
     "allele_counts": {
         "variant": {
@@ -219,17 +231,16 @@ SCHEMA = {
             "maxshape": (None, None),
             "chunks": (1, 5000),
         },
-        "log": LOG_DICT,
     },
 }
 
-# add tracking for local segment index along axis 0
-for s in MODALITIES:
-    SCHEMA["copy_numbers"][s]["tracked_tables"] = []
-    for tab in ["profile", "logr", "baf"]:
-        SCHEMA["copy_numbers"][s]["tracked_tables"].append(
-            (f"copy_numbers/{s}/{tab}", 0)
-        )
+# # add tracking for local segment index along axis 0
+# for s in MODALITIES:
+#     SCHEMA["copy_numbers"][s]["tracked_tables"] = []
+#     for tab in ["profile", "logr", "baf"]:
+#         SCHEMA["copy_numbers"][s]["tracked_tables"].append(
+#             (f"copy_numbers/{s}/{tab}", 0)
+#         )
 
 
 def get_schema_value(path, key, default=None):

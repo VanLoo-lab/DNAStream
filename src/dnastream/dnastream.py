@@ -12,13 +12,13 @@ import numpy as np
 
 
 # import json
-from .index_manager import BaseIndex, GlobalIndex
+from .index_manager import LocalIndex, GlobalIndex
 
 from .schema import (
     SCHEMA,
     STRUCT_ARRAYS,
-    META_TABLES,
-    MODALITIES,
+    LOCAL_INDEX,
+    GLOBAL_INDEX,
     COPY_NUMBER_LAYER_DICT,
     get_schema_value,
 )
@@ -166,15 +166,7 @@ class DNAStream:
     SAMPLE = "sample"
     TREE = "tree"
     CNA = "CNA"
-    CLONAL = "clonal"
-
-    TREE_TYPES = ["SNV", "CNA"]
-
-    GLOBAL_INDICES = [SNV, SAMPLE, SNP]
-    LOCAL_INDICES = [f"tree/{ttype}_trees" for ttype in TREE_TYPES] + [
-        f"copy_numbers/{mod}" for mod in MODALITIES
-    ]
-    TREES = [SNV, CNA, CLONAL]
+    CLONAL = "CLONAL"
 
     def __init__(
         self, filename, initialize=True, verbose=False, id=None, sex=None, safe=True
@@ -194,24 +186,23 @@ class DNAStream:
         if initialize:
             self._recursive_build(SCHEMA)
 
-        self.local_idx = {
-            name: BaseIndex(
-                self.file,
-                name,
-                metadata_dtype=self._local_idx_dtype(name),
-                tracked_tables=get_schema_value(name, "tracked_tables", []),
-            )
-            for name in DNAStream.LOCAL_INDICES
-        }
-
         self.global_idx = {}  # Dictionary to store global indices
 
         # Initialize built-in global indices
-        for index_name in DNAStream.GLOBAL_INDICES:
+        for index_name in GLOBAL_INDEX:
             self.create_global_index(
                 index_name,
-                metadata_dtype=SCHEMA["index"][index_name]["metadata"]["dtype"],
-                tracked_tables=SCHEMA["index"][index_name]["tracked_tables"],
+                metadata_dtype=GLOBAL_INDEX[index_name]["metadata"]["dtype"],
+                tracked_tables=GLOBAL_INDEX[index_name]["tracked_tables"],
+            )
+
+        self.local_idx = {}
+
+        for index_name in LOCAL_INDEX:
+            self.create_local_index(
+                index_name,
+                metadata_dtype=LOCAL_INDEX[index_name]["metadata"]["dtype"],
+                tracked_tables=LOCAL_INDEX[index_name]["tracked_tables"],
             )
 
         if id:
@@ -231,8 +222,8 @@ class DNAStream:
 
     def __str__(self):
         """To string method"""
-        m = self.file[f"{DNAStream.SNV}/label"].shape[0]
-        n = self.file[f"{DNAStream.SAMPLE}/label"].shape[0]
+        m = self.get_snv_size()
+        n = self.get_sample_size()
 
         mystr = f"DNAStream object with {m} SNVs and {n} samples"
         mystr += f"\nHDF5 File: {self.filename}"
@@ -262,7 +253,7 @@ class DNAStream:
         # Initialize the GlobalIndex and store it
         self.global_idx[index_name] = GlobalIndex(
             self.file,
-            f"index/{index_name}",
+            f"global_index/{index_name}",
             metadata_dtype=metadata_dtype,
             tracked_tables=tracked_tables,
         )
@@ -273,6 +264,11 @@ class DNAStream:
             "size": "get_{}_size",
             "get_index": "get_{}_index",
             "get_labels": "get_{}_labels",
+            "add": "batch_{}_add",
+            "update_clusters": "update_{}_clusters",
+            "get_log": "get_{}_log",
+            "get_metadata": "get_{}_metadata",
+            "label_to_idx": "{}_label_to_idx",
         }
 
         for attr, method_template in methods.items():
@@ -295,14 +291,78 @@ class DNAStream:
         if self.verbose:
             print(f"Created global index '{index_name}' and bound methods.")
 
-    def _dtype(self, table):
-        return self.file[table].dtype
+    def create_local_index(self, index_name, metadata_dtype=None, tracked_tables=None):
+        """
+        Create a new local index and bind its accessor methods.
 
-    def _local_idx_dtype(self, table):
-        if f"{table}/metadata" not in self.file:
-            print(f"{table}/metadata")
-        dtype = self.file[f"{table}/metadata"].dtype
-        return dtype
+        Parameters
+        ----------
+        index_name : str
+            Name of the index (e.g., 'tree/SNV_trees', 'copy_numbers/bulk').
+        metadata_dtype : numpy.dtype, optional
+            The metadata data type for the index.
+        tracked_tables : list of tuples, optional
+            Tables and axis to be tracked with this index (table_name, axis).
+
+        Raises
+        ------
+        ValueError
+            If the tracked tables are not within the same group scope.
+
+        Notes
+        -----
+        - Adds the new index to `self.local_idx`.
+        - Dynamically binds accessor methods (`get_labels`, `get_index`, etc.).
+        - Ensures that all tracked tables are in the same group scope.
+        """
+
+        # Ensure tracked tables all belong to the same base group
+        if tracked_tables:
+            base_groups = {table.split("/")[0] for table, _ in tracked_tables}
+            if len(base_groups) > 1:
+                raise ValueError(
+                    f"Inconsistent tracking groups detected: {base_groups}. "
+                    "All tracked tables must belong to the same base group."
+                )
+
+        # Initialize the LocalIndex and store it
+        self.local_idx[index_name] = LocalIndex(
+            self.file,
+            f"local_index/{index_name}",
+            metadata_dtype=metadata_dtype,
+            tracked_tables=tracked_tables,
+        )
+
+        # Define dynamic methods to bind
+        methods = {
+            "get_labels": "get_{}_labels",
+            "size": "get_{}_size",
+            "get_index": "get_{}_index",
+            "get_metadata": "get_{}_metadata",
+            "label_to_idx": "{}_label_to_idx",
+        }
+
+        for attr, method_template in methods.items():
+            method_name = method_template.format(index_name.lower().replace("/", "_"))
+            actual_method = getattr(self.local_idx[index_name], attr)
+
+            @functools.wraps(actual_method)  # Preserve function signature & docstring
+            def method(self, *args, actual_method=actual_method, **kwargs):
+                return actual_method(*args, **kwargs)
+
+            # Assign docstring explicitly
+            method.__doc__ = (
+                actual_method.__doc__ or ""
+            ).strip() + f" (Auto-generated for {index_name})"
+
+            # Bind the method to the instance
+            setattr(self, method_name, method.__get__(self))
+
+        if self.verbose:
+            print(f"Created local index '{index_name}' and bound methods.")
+
+    def get_dtype(self, table):
+        return self.file[table].dtype
 
     def set_patient_id(self, id):
         self.file.attrs["id"] = id
@@ -462,9 +522,9 @@ class DNAStream:
 
             snvs = rc["snv"].unique().tolist()
 
-            snv_idx = self.batch_add_snvs(snvs, source_file=fname)
+            snv_idx = self.batch_snv_add(snvs, source_file=fname)
 
-            sample_idx = self.batch_add_samples(samples, source_file=fname)
+            sample_idx = self.batch_sample_add(samples, source_file=fname)
             sample_indices = list(sample_idx.values())
             if source:
                 self._update_value(
@@ -511,19 +571,6 @@ class DNAStream:
             self.close()
             raise Exception(e)
 
-    # def create_global_index(self, name, metadata_dtype):
-    #     """
-    #     Add an empty global index to the HDF5 file.
-
-    #     Parameters
-    #     ----------
-    #     name : str
-    #         Name of the index.
-    #     metadata_dtype : numpy.dtype
-    #         Data type of the index metadata.
-    #     """
-    #     self.global_idx[name] = GlobalIndex(self.file, name, metadata_dtype)
-
     def _add_read_count(self, snv_idx, sample_idx, var=0, total=0):
         """
         Internal function to add a single read count entry. Currently not used.
@@ -546,294 +593,196 @@ class DNAStream:
         dat["variant"][snv_idx, sample_idx] = var
         dat["total"][snv_idx, sample_idx] = total
 
-    def snv_label_to_idx(self, label):
-        """
-        Retrieve the index of an SNV label.
-
-        Parameters
-        ----------
-        label : str
-            SNV label to look up.
-
-        Returns
-        -------
-        int or None
-            Index of the SNV if found, else None.
-        """
-        return self.global_idx[DNAStream.SNV].sample_label_to_idx(label)
-
-    def sample_label_to_idx(self, label):
-        """
-        Retrieve the index of a sample label.
-
-        Parameters
-        ----------
-        label : str
-            sample label to look up.
-
-        Returns
-        -------
-        int or None
-            Index of the sample if found, else None.
-        """
-        return self.global_idx[DNAStream.SAMPLE][label]
-
-    def _resize_all(self, m=None, n=None):
-        """
-        Resize the HDF5 datasets to accommodate additional SNVs or samples.
-
-        Parameters
-        ----------
-        m : int, optional
-            New size for the SNV index (default is None, which does not resize).
-        n : int, optional
-            New size for sample index (default is None, which does not resize).
-        """
-
-        if m:
-            for snv_data in META_TABLES:
-                if snv_data == "log":
-                    continue
-                group_path = f"{DNAStream.SNV}/{snv_data}"
-
-                self.file[group_path].resize((m,))
-        else:
-            m = self.global_idx["SNV"].size()
-
-        if n:
-            for sample_data in META_TABLES:
-                if sample_data == "log":
-                    continue
-                group_path = f"{DNAStream.SAMPLE}/{sample_data}"
-                self.file[group_path].resize((n,))
-        else:
-            n = self.global_idx["sample"].size()
-
-        group_path = "read_counts"
-        for reads in ["variant", "total"]:
-
-            mat = self.file[f"{group_path}/{reads}"]
-            mat.resize((m, n))
-
-    def add_snv(self, label, cluster=None, data=None, overwrite=False):
-        """
-        Add a single SNV (Single Nucleotide Variant) to the dataset.
-
-        Parameters
-        ----------
-        label : str
-            The SNV label (e.g., concatenated chromosome, position, reference, and alternate allele).
-        cluster : int, optional
-            Cluster ID associated with the SNV (default is None).
-        data : dict, optional
-            Additional metadata to store for the SNV (default is None).
-        overwrite : bool, optional
-            If True, overwrite existing SNV data if it already exists (default is False).
-
-        Returns
-        -------
-        int
-            The assigned index of the SNV in the dataset.
-        """
-        return self.add_item(
-            label, index=DNAStream.SNV, cluster=cluster, data=data, overwrite=overwrite
-        )
-
-    def add_sample(self, label, cluster=None, data=None, overwrite=False):
-        """
-        Add a single sample to the dataset.
-
-        Parameters
-        ----------
-        label : str
-            The sample label (e.g., patient or sample ID).
-        cluster : int, optional
-            Cluster ID associated with the sample (default is None).
-        data : dict, optional
-            Additional metadata to store for the sample (default is None).
-        overwrite : bool, optional
-            If True, overwrite existing sample data if it already exists (default is False).
-
-        Returns
-        -------
-        int
-            The assigned index of the sample in the dataset.
-        """
-        return self._add_item(
-            label,
-            index=DNAStream.SAMPLE,
-            cluster=cluster,
-            data=data,
-            overwrite=overwrite,
-        )
-
-    def _add_item(
-        self,
-        label: str,
-        index_name,
-        index_dict=None,
-        cluster=None,
-        data=None,
-        overwrite=False,
-    ):
-        """
-        Internal method to add an item (SNV or sample) to the dataset.
-
-        Parameters
-        ----------
-        label : str
-            The unique identifier for the SNV or sample.
-        index_name : str
-            The index type, either DNAStream.SNV or DNAStream.SAMPLE.
-        index_dict : dict, optional
-            Pre-loaded index dictionary for quick lookups (default is None).
-        cluster : int, optional
-            Cluster ID for the SNV or sample (default is None).
-        data : dict, optional
-            Additional metadata to associate with the SNV or sample (default is None).
-        overwrite : bool, optional
-            If True, overwrite existing entry (default is False).
-
-        Returns
-        -------
-        int
-            The assigned index of the item in the dataset.
-
-        Raises
-        ------
-        ValueError
-            If the label already exists and `overwrite=False`, a warning is printed, and no action is taken.
-        """
-        label = label.encode("utf-8")
-        idx = self.idx_by_label(label, index_name, index_dict)
-
-        if not idx:
-            new_idx = self.file[f"{index_name}/label"].shape[0]
-            if index_name == DNAStream.SNV:
-                self._resize_all(m=new_idx + 1)
-            else:
-                self._resize_all(n=new_idx + 1)
-        else:
-            if overwrite:
-                new_idx = idx
-            else:
-                print(
-                    f"{label} exists in {index_name}, use overwrite=True to overwrite metadata."
-                )
-                return idx
-
-        self.file[f"{index_name}/label"][new_idx] = label
-        self.file[f"{index_name}/index"][label] = new_idx
-        if data:
-            self.file[f"{index_name}/metadata"][new_idx] = data
-        if cluster:
-            self.file[f"{index_name}/cluster"][new_idx] = cluster
-
-        return new_idx
-
-    # def load_snv_index(self):
+    # def _resize_all(self, m=None, n=None):
     #     """
-    #     Load the SNV index from the HDF5 file.
+    #     Resize the HDF5 datasets to accommodate additional SNVs or samples.
+
+    #     Parameters
+    #     ----------
+    #     m : int, optional
+    #         New size for the SNV index (default is None, which does not resize).
+    #     n : int, optional
+    #         New size for sample index (default is None, which does not resize).
+    #     """
+
+    #     if m:
+    #         for snv_data in META_TABLES:
+    #             if snv_data == "log":
+    #                 continue
+    #             group_path = f"{DNAStream.SNV}/{snv_data}"
+
+    #             self.file[group_path].resize((m,))
+    #     else:
+    #         m = self.global_idx["SNV"].size()
+
+    #     if n:
+    #         for sample_data in META_TABLES:
+    #             if sample_data == "log":
+    #                 continue
+    #             group_path = f"{DNAStream.SAMPLE}/{sample_data}"
+    #             self.file[group_path].resize((n,))
+    #     else:
+    #         n = self.global_idx["sample"].size()
+
+    #     group_path = "read_counts"
+    #     for reads in ["variant", "total"]:
+
+    #         mat = self.file[f"{group_path}/{reads}"]
+    #         mat.resize((m, n))
+
+    # def add_snv(self, label, cluster=None, data=None, overwrite=False):
+    #     """
+    #     Add a single SNV (Single Nucleotide Variant) to the dataset.
+
+    #     Parameters
+    #     ----------
+    #     label : str
+    #         The SNV label (e.g., concatenated chromosome, position, reference, and alternate allele).
+    #     cluster : int, optional
+    #         Cluster ID associated with the SNV (default is None).
+    #     data : dict, optional
+    #         Additional metadata to store for the SNV (default is None).
+    #     overwrite : bool, optional
+    #         If True, overwrite existing SNV data if it already exists (default is False).
 
     #     Returns
     #     -------
-    #     dict
-    #         A dictionary mapping SNV labels to their respective indices.
+    #     int
+    #         The assigned index of the SNV in the dataset.
     #     """
-    #     return self.global_idx[DNAStream.SNV].get_index()
+    #     return self.add_item(
+    #         label, index=DNAStream.SNV, cluster=cluster, data=data, overwrite=overwrite
+    #     )
 
-    # def load_sample_index(self):
+    # def add_sample(self, label, cluster=None, data=None, overwrite=False):
     #     """
-    #     Load the sample index from the HDF5 file.
+    #     Add a single sample to the dataset.
+
+    #     Parameters
+    #     ----------
+    #     label : str
+    #         The sample label (e.g., patient or sample ID).
+    #     cluster : int, optional
+    #         Cluster ID associated with the sample (default is None).
+    #     data : dict, optional
+    #         Additional metadata to store for the sample (default is None).
+    #     overwrite : bool, optional
+    #         If True, overwrite existing sample data if it already exists (default is False).
 
     #     Returns
     #     -------
-    #     dict
-    #         A dictionary mapping sample labels to their respective indices.
+    #     int
+    #         The assigned index of the sample in the dataset.
     #     """
-    #     return self.global_idx[DNAStream.SNV].get_index()
+    #     return self._add_item(
+    #         label,
+    #         index=DNAStream.SAMPLE,
+    #         cluster=cluster,
+    #         data=data,
+    #         overwrite=overwrite,
+    #     )
 
-    def batch_add_snvs(self, labels, source_file=""):
-        """
-        Batch add multiple SNVs to the dataset.
+    # def _add_item(
+    #     self,
+    #     label: str,
+    #     index_name,
+    #     index_dict=None,
+    #     cluster=None,
+    #     data=None,
+    #     overwrite=False,
+    # ):
+    #     """
+    #     Internal method to add an item (SNV or sample) to the dataset.
 
-        Parameters
-        ----------
-        labels : list of str
-            List of SNV labels to add.
-        source_file : str, optional
-            Path to the source file from which the SNVs are being added (default is an empty string).
+    #     Parameters
+    #     ----------
+    #     label : str
+    #         The unique identifier for the SNV or sample.
+    #     index_name : str
+    #         The index type, either DNAStream.SNV or DNAStream.SAMPLE.
+    #     index_dict : dict, optional
+    #         Pre-loaded index dictionary for quick lookups (default is None).
+    #     cluster : int, optional
+    #         Cluster ID for the SNV or sample (default is None).
+    #     data : dict, optional
+    #         Additional metadata to associate with the SNV or sample (default is None).
+    #     overwrite : bool, optional
+    #         If True, overwrite existing entry (default is False).
 
-        Returns
-        -------
-        dict
-            A dictionary mapping SNV labels to their respective indices.
-        """
-        snv_dict = self.global_idx[DNAStream.SNV].add(labels, source_file)
+    #     Returns
+    #     -------
+    #     int
+    #         The assigned index of the item in the dataset.
 
-        self._resize_all(m=self.global_idx[DNAStream.SNV].size())
+    #     Raises
+    #     ------
+    #     ValueError
+    #         If the label already exists and `overwrite=False`, a warning is printed, and no action is taken.
+    #     """
+    #     label = label.encode("utf-8")
+    #     idx = self.idx_by_label(label, index_name, index_dict)
 
-        return snv_dict
+    #     if not idx:
+    #         new_idx = self.file[f"{index_name}/label"].shape[0]
+    #         if index_name == DNAStream.SNV:
+    #             self._resize_all(m=new_idx + 1)
+    #         else:
+    #             self._resize_all(n=new_idx + 1)
+    #     else:
+    #         if overwrite:
+    #             new_idx = idx
+    #         else:
+    #             print(
+    #                 f"{label} exists in {index_name}, use overwrite=True to overwrite metadata."
+    #             )
+    #             return idx
 
-    def batch_add_samples(self, labels, source_file="", metadata=None):
-        """
-        Batch add multiple samples to the dataset.
+    #     self.file[f"{index_name}/label"][new_idx] = label
+    #     self.file[f"{index_name}/index"][label] = new_idx
+    #     if data:
+    #         self.file[f"{index_name}/metadata"][new_idx] = data
+    #     if cluster:
+    #         self.file[f"{index_name}/cluster"][new_idx] = cluster
 
-        Parameters
-        ----------
-        labels : list of str
-            List of sample labels to add.
-        source_file : str, optional
-            Path to the source file from which the samples are being added (default is an empty string).
+    #     return new_idx
 
-        Returns
-        -------
-        dict
-            A dictionary mapping sample labels to their respective indices.
-        """
-        sample_dict = self.global_idx[DNAStream.sample].add(labels, source_file)
+    # def get_snv_data(self, indices=None):
+    #     """
+    #     Retrieve SNV data from the HDF5 file.
 
-        self._resize_all(n=self.global_idx[DNAStream.sample].size())
+    #     Parameters
+    #     ----------
+    #     indices : list of int, optional
+    #         A list of SNV indices to retrieve. If None, retrieves all SNVs.
 
-        return sample_dict
+    #     Returns
+    #     -------
+    #     pandas.DataFrame
+    #         A DataFrame containing the SNV data.
+    #     """
+    #     return self._get_data(dataset_name=f"{DNAStream.SNV}/metadata", indices=indices)
 
-    def get_snv_data(self, indices=None):
-        """
-        Retrieve SNV data from the HDF5 file.
+    # def get_snv_log(self):
+    #     """
+    #     Retrieve the SNV index update log.
 
-        Parameters
-        ----------
-        indices : list of int, optional
-            A list of SNV indices to retrieve. If None, retrieves all SNVs.
+    #     Returns
+    #     -------
+    #     pandas.DataFrame
+    #         A DataFrame containing log entries for SNV updates.
+    #     """
+    #     return self._get_data(dataset_name=self.global_idx[DNAStream.SNV].log_name)
 
-        Returns
-        -------
-        pandas.DataFrame
-            A DataFrame containing the SNV data.
-        """
-        return self._get_data(dataset_name=f"{DNAStream.SNV}/metadata", indices=indices)
+    # def get_sample_log(self):
+    #     """
+    #     Retrieve the sample index update log.
 
-    def get_snv_log(self):
-        """
-        Retrieve the SNV index update log.
-
-        Returns
-        -------
-        pandas.DataFrame
-            A DataFrame containing log entries for SNV updates.
-        """
-        return self._get_data(dataset_name=self.global_idx[DNAStream.SNV].log_name)
-
-    def get_sample_log(self):
-        """
-        Retrieve the sample index update log.
-
-        Returns
-        -------
-        pandas.DataFrame
-            A DataFrame containing log entries for sample updates.
-        """
-        return self._get_data(dataset_name=self.global_idx[DNAStream.sample].log_name)
+    #     Returns
+    #     -------
+    #     pandas.DataFrame
+    #         A DataFrame containing log entries for sample updates.
+    #     """
+    #     return self._get_data(dataset_name=self.global_idx[DNAStream.sample].log_name)
 
     def get_dataset_log(self):
         """
@@ -846,23 +795,23 @@ class DNAStream:
         """
         return self._get_data(dataset_name=f"metadata/log")
 
-    def get_sample_data(self, indices=None):
-        """
-        Retrieve sample data from the HDF5 file.
+    # def get_sample_data(self, indices=None):
+    #     """
+    #     Retrieve sample data from the HDF5 file.
 
-        Parameters
-        ----------
-        indices : list of int, optional
-            A list of sample indices to retrieve. If None, retrieves all samples.
+    #     Parameters
+    #     ----------
+    #     indices : list of int, optional
+    #         A list of sample indices to retrieve. If None, retrieves all samples.
 
-        Returns
-        -------
-        pandas.DataFrame
-            A DataFrame containing the sample data.
-        """
-        return self._get_data(
-            dataset_name=f"{DNAStream.SAMPLE}/metadata", indices=indices
-        )
+    #     Returns
+    #     -------
+    #     pandas.DataFrame
+    #         A DataFrame containing the sample data.
+    #     """
+    #     return self._get_data(
+    #         dataset_name=f"{DNAStream.SAMPLE}/metadata", indices=indices
+    #     )
 
     def _get_data(self, dataset_name, indices=None):
         """
@@ -1158,7 +1107,7 @@ class DNAStream:
 
         try:
 
-            snv_idx = self.batch_add_snvs(snv_labels, source_file=fname)
+            snv_idx = self.batch_snv_add(snv_labels, source_file=fname)
 
             # sort dataframe according to the newly assigned indices in DNAStream
             maf.loc[:, "snv_idx"] = maf["label"].map(snv_idx)
@@ -1267,8 +1216,8 @@ class DNAStream:
         self._expand([f"{table_name}/trees"], numtrees)
 
         # Add the tree metadata to the file
-        data_dtype = self._dtype(f"{DNAStream.TREE}/{tree_type}_trees/metadata")
-        tree_dtype = self._dtype(f"{DNAStream.TREE}/{tree_type}_trees/trees")
+        data_dtype = self.get_dtype(f"{DNAStream.TREE}/{tree_type}_trees/metadata")
+        tree_dtype = self.get_dtype(f"{DNAStream.TREE}/{tree_type}_trees/trees")
 
         if not scores:
             dat = np.array(
@@ -1411,7 +1360,7 @@ class DNAStream:
         - The function logs modifications to the SNV tree dataset.
         - The tree is added with metadata including method, score, and rank.
         """
-        data_dtype = self._dtype(f"{DNAStream.TREE}/SNV_trees/metadata")
+        data_dtype = self.get_dtype(f"{DNAStream.TREE}/SNV_trees/metadata")
 
         dat = np.array([("", method, score, rank, "")], dtype=data_dtype)
         self._add_trees(edge_list, "SNV", data=dat)
@@ -1548,7 +1497,7 @@ class DNAStream:
             self._expand([f"{dataset_name}/metadata"], num_copy_numbers)
 
             # Add the copy number metadata to the file
-            data_dtype = self._dtype(f"{DNAStream.COPY_NUMBER}/metadata")
+            data_dtype = self.get_dtype(f"{DNAStream.COPY_NUMBER}/metadata")
             # SCHEMA[DNAStream.COPY_NUMBER]["data"]["dtype"]
             dat = np.array(
                 [(lab, val, source_file) for lab, val in zip(copy_number_dict, values)],
@@ -1618,22 +1567,22 @@ class DNAStream:
 
 
 
-        PYCLONE OUTPUT FORMAT:
-        The results file output by write-results-file is in tab delimited format. There six columns:
+        # PYCLONE OUTPUT FORMAT:
+        # The results file output by write-results-file is in tab delimited format. There six columns:
 
-        mutation_id - Mutation identifier as used in the input file.
+        # mutation_id - Mutation identifier as used in the input file.
 
-        sample_id - Unique identifier for the sample as used in the input file.
+        # sample_id - Unique identifier for the sample as used in the input file.
 
-        cluster_id - Most probable cluster or clone the mutation was assigned to.
+        # cluster_id - Most probable cluster or clone the mutation was assigned to.
 
-        cellular_prevalence - Proportion of malignant cells with the mutation in the sample.
-        This is also called cancer cell fraction (CCF) in the literature.
+        # cellular_prevalence - Proportion of malignant cells with the mutation in the sample.
+        # This is also called cancer cell fraction (CCF) in the literature.
 
-        cellular_prevalence_std - Standard error of the cellular_prevalence estimate.
+        # cellular_prevalence_std - Standard error of the cellular_prevalence estimate.
 
-        cluster_assignment_prob - Posterior probability the mutation is assigned to the cluster.
-        This can be used as a confidence score to remove mutations with low probability of belonging to a cluster.
+        # cluster_assignment_prob - Posterior probability the mutation is assigned to the cluster.
+        # This can be used as a confidence score to remove mutations with low probability of belonging to a cluster.
 
         """
 
@@ -1649,18 +1598,14 @@ class DNAStream:
         snv_labels = pyclone["mutation_id"].tolist()
         sample_labels = pyclone["sample_id"].tolist()
 
-        _ = self.global_idx[DNAStream.SNV].add(snv_labels, source_file=source_file)
+        _ = self.batch_snv_add(snv_labels, source_file=source_file)
 
-        _ = self.global_idx[DNAStream.SAMPLE].add(
-            sample_labels, source_file=source_file
-        )
+        _ = self.batch_sample_add(sample_labels, source_file=source_file)
 
         cluster_dict = dict(zip(snv_labels, pyclone["cluster_id"].astype(int)))
 
         # update the clusters
-        self.global_idx[DNAStream.SNV].update_clusters(
-            cluster_dict, source_file=source_file
-        )
+        self.update_snv_clusters(cluster_dict, source_file=source_file)
 
         if self.verbose:
             print(f"#{len(cluster_dict)} SNV cluster assignments updated.")

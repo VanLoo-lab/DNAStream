@@ -6,6 +6,7 @@ import socket
 from datetime import datetime
 import h5py
 import numpy as np
+import pandas as pd
 from .datatypes import LOG_DTYPE
 
 
@@ -77,6 +78,10 @@ class BaseIndex:
         """Return the number of labels in the index."""
         return len(self._labels_cache)
 
+    def label_to_idx(self, label):
+        """Return the index of a label."""
+        return self._index_cache.get(label, None)
+
     def _resize(self, new_size):
         """Resize the index dataset."""
         self.labels.resize((new_size,))
@@ -125,6 +130,42 @@ class BaseIndex:
             )
 
         self.tracked_tables[table_name] = axis
+
+    def _get_data(self, dataset, indices=None):
+        """
+        Internal method to retrieve structured data from the HDF5 file.
+
+        Parameters
+        ----------
+        dataset : reference to a HDF5 dataset
+            The name of the dataset to retrieve (e.g., "SNV/metadata").
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame containing the requested dataset.
+
+        Notes
+        -----
+        - The method decodes byte strings into UTF-8.
+        """
+
+        columns = dataset.attrs["columns"]
+        if indices:
+            dataset = dataset[indices]
+        else:
+            dataset = dataset[:]
+
+        df = pd.DataFrame(dataset, columns=columns)
+
+        # Convert byte strings to UTF-8
+        for col in df.select_dtypes(include=["object"]):
+            if df[col].dtype == object:
+                df[col] = df[col].apply(
+                    lambda x: x.decode("utf-8") if isinstance(x, bytes) else x
+                )
+
+        return df
 
     def add(self, labels, metadata=None):
         """
@@ -241,17 +282,20 @@ class BaseIndex:
                         f"Warning {table_name} not in file! skipping resizing. Modify tracked tables for {self.group} index to suppress this warning."
                     )
 
-    def get_metadata(self, label):
+    def get_metadata(self, labels=None):
         """Get metadata for a given label.
 
         Parameters
         ----------
-        label : str
-            The label to look up.
+        labels : list of str, optional
+            The labels of the metadata to return.
 
         """
-        idx = self._index_cache.get(label, None)
-        return self.metadata[idx] if idx is not None else None
+        if labels:
+            idxs = [self[label] for label in labels]
+            return self._get_data(self.metadata, idxs)
+        else:
+            return self._get_data(self.metadata)
 
 
 class GlobalIndex(BaseIndex):
@@ -290,7 +334,7 @@ class GlobalIndex(BaseIndex):
 
     def get_log(self):
         """Return the log dataset."""
-        return self.log
+        return self._get_data(self.log)
 
     def _resize(self, new_size):
         super()._resize(new_size)
@@ -449,3 +493,18 @@ class GlobalIndex(BaseIndex):
             ]  # Convert structured array row to list of strings
             formatted_entry = " | ".join(v.ljust(w) for v, w in zip(values, col_widths))
             print(formatted_entry)
+
+
+class LocalIndex(BaseIndex):
+    """Handles local indices (tree structures, copy numbers, etc.)."""
+
+    def __init__(self, file, name, metadata_dtype, tracked_tables, verbose=False):
+        super().__init__(file, name, metadata_dtype, tracked_tables, verbose)
+
+    def get_metadata(self):
+        """Return metadata for this local index."""
+        return self._get_data(self.metadata)
+
+    def get_labels(self):
+        """Return labels for this local index."""
+        return self._labels_cache
