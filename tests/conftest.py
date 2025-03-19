@@ -70,3 +70,9 @@ def global_index(temp_h5_stream):
         tracked_tables=[("read_counts", 0)],
         verbose=True,
     )
+
+
+@pytest.fixture
+def pyclone_file():
+    """Fixture to provide pyclone file for testing."""
+    return os.path.join(TEST_DATA_DIR, "pyclone.tsv")

@@ -194,15 +194,6 @@ class DNAStream:
         if initialize:
             self._recursive_build(SCHEMA)
 
-        self.global_idx = {
-            name: GlobalIndex(
-                self.file,
-                f"index/{name}",
-                metadata_dtype=SCHEMA["index"][name]["metadata"]["dtype"],
-                tracked_tables=SCHEMA["index"][name]["tracked_tables"],
-            )
-            for name in SCHEMA["index"].keys()
-        }
         self.local_idx = {
             name: BaseIndex(
                 self.file,
@@ -212,19 +203,16 @@ class DNAStream:
             )
             for name in DNAStream.LOCAL_INDICES
         }
-        # Create group structure for read counts
-        # for key, _ in READ_COUNTS.items():
-        #     # self.add_dataset_to_file(
-        #     #     key,
-        #     #     shape=(0, 0),
-        #     #     maxshape=(None, None),
-        #     #     dtype=dtype,
-        #     #     compression="gzip",
-        #     #     chunks=(1, 5000),
-        #     # )
-        # TODO: add dim labels
-        #     self.file[key].dims[0].label = DNAStream.SNV
-        #     self.file[key].dims[1].label = DNAStream.SAMPLE
+
+        self.global_idx = {}  # Dictionary to store global indices
+
+        # Initialize built-in global indices
+        for index_name in DNAStream.GLOBAL_INDICES:
+            self.create_global_index(
+                index_name,
+                metadata_dtype=SCHEMA["index"][index_name]["metadata"]["dtype"],
+                tracked_tables=SCHEMA["index"][index_name]["tracked_tables"],
+            )
 
         if id:
             self.set_patient_id(id)
@@ -251,6 +239,61 @@ class DNAStream:
         mystr += f"\nPatient: {self.file.attrs['id']}, sex: {self.file.attrs['sex']}"
 
         return mystr
+
+    def create_global_index(self, index_name, metadata_dtype=None, tracked_tables=None):
+        """
+        Create a new global index and bind its accessor methods.
+
+        Parameters
+        ----------
+        index_name : str
+            Name of the index (e.g., 'SNV', 'sample', etc.).
+        metadata_dtype : numpy.dtype, optional
+            The metadata data type for the index.
+        tracked_tables : list of tuples, optional
+            Tables and axis to be tracked with this index (table_name, axis).
+
+        Notes
+        -----
+        - Adds the new index to `self.global_idx`.
+        - Dynamically binds accessor methods (`get_index`, `get_clusters`, etc.).
+        """
+
+        # Initialize the GlobalIndex and store it
+        self.global_idx[index_name] = GlobalIndex(
+            self.file,
+            f"index/{index_name}",
+            metadata_dtype=metadata_dtype,
+            tracked_tables=tracked_tables,
+        )
+
+        # Define dynamic methods to bind
+        methods = {
+            "get_clusters": "get_{}_clusters",
+            "size": "get_{}_size",
+            "get_index": "get_{}_index",
+            "get_labels": "get_{}_labels",
+        }
+
+        for attr, method_template in methods.items():
+            method_name = method_template.format(index_name.lower())
+            actual_method = getattr(self.global_idx[index_name], attr)
+
+            @functools.wraps(actual_method)  # Preserve function signature & docstring
+            def method(self, *args, actual_method=actual_method, **kwargs):
+                return actual_method(*args, **kwargs)
+
+            # Assign docstring explicitly, ensuring actual_method.__doc__ is not None
+            method.__doc__ = (
+                actual_method.__doc__ or ""
+            ).strip() + f" (Auto-generated for {index_name})"
+
+            # Bind the method to the instance
+            setattr(self, method_name, method.__get__(self))
+            # setattr(DNAStream, method_name, method)
+
+        if self.verbose:
+            print(f"Created global index '{index_name}' and bound methods.")
 
     def _dtype(self, table):
         return self.file[table].dtype
@@ -468,18 +511,18 @@ class DNAStream:
             self.close()
             raise Exception(e)
 
-    def create_global_index(self, name, metadata_dtype):
-        """
-        Add an empty global index to the HDF5 file.
+    # def create_global_index(self, name, metadata_dtype):
+    #     """
+    #     Add an empty global index to the HDF5 file.
 
-        Parameters
-        ----------
-        name : str
-            Name of the index.
-        metadata_dtype : numpy.dtype
-            Data type of the index metadata.
-        """
-        self.global_idx[name] = GlobalIndex(self.file, name, metadata_dtype)
+    #     Parameters
+    #     ----------
+    #     name : str
+    #         Name of the index.
+    #     metadata_dtype : numpy.dtype
+    #         Data type of the index metadata.
+    #     """
+    #     self.global_idx[name] = GlobalIndex(self.file, name, metadata_dtype)
 
     def _add_read_count(self, snv_idx, sample_idx, var=0, total=0):
         """
@@ -688,27 +731,27 @@ class DNAStream:
 
         return new_idx
 
-    def load_snv_index(self):
-        """
-        Load the SNV index from the HDF5 file.
+    # def load_snv_index(self):
+    #     """
+    #     Load the SNV index from the HDF5 file.
 
-        Returns
-        -------
-        dict
-            A dictionary mapping SNV labels to their respective indices.
-        """
-        return self.global_idx[DNAStream.SNV].get_index()
+    #     Returns
+    #     -------
+    #     dict
+    #         A dictionary mapping SNV labels to their respective indices.
+    #     """
+    #     return self.global_idx[DNAStream.SNV].get_index()
 
-    def load_sample_index(self):
-        """
-        Load the sample index from the HDF5 file.
+    # def load_sample_index(self):
+    #     """
+    #     Load the sample index from the HDF5 file.
 
-        Returns
-        -------
-        dict
-            A dictionary mapping sample labels to their respective indices.
-        """
-        return self.global_idx[DNAStream.SNV].get_index()
+    #     Returns
+    #     -------
+    #     dict
+    #         A dictionary mapping sample labels to their respective indices.
+    #     """
+    #     return self.global_idx[DNAStream.SNV].get_index()
 
     def batch_add_snvs(self, labels, source_file=""):
         """
@@ -1374,19 +1417,10 @@ class DNAStream:
         self._add_trees(edge_list, "SNV", data=dat)
         self._log_dataset_modification(f"{DNAStream.TREE}/SNV_tree", operation="update")
 
-    def add_pyclone_file(self, fname):
-        pass
-
     def _extract_indices_by_column(self, dataset_name, name, values):
         vals = self.file[dataset_name][name][:]  # Load the column data
         indices = np.where(np.isin(vals, values))[0]  # Get matching indices
         return indices
-
-    def load_indices(self):
-        """
-        Wrapper to return both SNV and sample indices as dictionaries
-        """
-        return self.load_snv_index(), self.load_sample_index()
 
     def _extract_data(self, dataset_name, snv_indices=None, sample_indices=None):
         """
@@ -1571,6 +1605,67 @@ class DNAStream:
         except Exception as e:
             self.close()
             raise Exception(e)
+
+    def parse_pyclone_file(self, source_file):
+        """
+        Parse a PyClone standard output file and extract the SNV cluster assignments.
+        These will update the SNV global index cluster assignments.
+
+        Parameters
+        ----------
+        source_file : str
+            Path to the PyClone file to parse.
+
+
+
+        PYCLONE OUTPUT FORMAT:
+        The results file output by write-results-file is in tab delimited format. There six columns:
+
+        mutation_id - Mutation identifier as used in the input file.
+
+        sample_id - Unique identifier for the sample as used in the input file.
+
+        cluster_id - Most probable cluster or clone the mutation was assigned to.
+
+        cellular_prevalence - Proportion of malignant cells with the mutation in the sample.
+        This is also called cancer cell fraction (CCF) in the literature.
+
+        cellular_prevalence_std - Standard error of the cellular_prevalence estimate.
+
+        cluster_assignment_prob - Posterior probability the mutation is assigned to the cluster.
+        This can be used as a confidence score to remove mutations with low probability of belonging to a cluster.
+
+        """
+
+        # TODO: What do do about CCFs and cluster assignment probs?
+        pyclone = pd.read_table(source_file, sep="\t")
+
+        if self.verbose:
+            print(
+                f"#Parsing PyClone output file {source_file} with {pyclone.shape[0]} rows."
+            )
+
+        # Extract the SNV labels
+        snv_labels = pyclone["mutation_id"].tolist()
+        sample_labels = pyclone["sample_id"].tolist()
+
+        _ = self.global_idx[DNAStream.SNV].add(snv_labels, source_file=source_file)
+
+        _ = self.global_idx[DNAStream.SAMPLE].add(
+            sample_labels, source_file=source_file
+        )
+
+        cluster_dict = dict(zip(snv_labels, pyclone["cluster_id"].astype(int)))
+
+        # update the clusters
+        self.global_idx[DNAStream.SNV].update_clusters(
+            cluster_dict, source_file=source_file
+        )
+
+        if self.verbose:
+            print(f"#{len(cluster_dict)} SNV cluster assignments updated.")
+
+        # self._log_dataset_modification("index/SNV/cluster", operation="update", source_file=source_file)
 
     def initialize_pseudobulk_layer(self, sample_label, source_file=""):
         """

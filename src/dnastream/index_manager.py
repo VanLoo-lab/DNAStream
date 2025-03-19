@@ -126,7 +126,7 @@ class BaseIndex:
 
         self.tracked_tables[table_name] = axis
 
-    def add(self, labels, metadata={}):
+    def add(self, labels, metadata=None):
         """
         Add multiple labels to the index.
 
@@ -148,6 +148,8 @@ class BaseIndex:
 
         new_metadata = np.zeros(len(added_indices), dtype=self.dat_dtype)
 
+        if not metadata:
+            metadata = {}
         # Assign metadata values (use default if not provided)
         for i, (label, idx) in enumerate(added_indices.items()):
             entry_metadata = metadata.get(
@@ -294,7 +296,7 @@ class GlobalIndex(BaseIndex):
         super()._resize(new_size)
         self.cluster.resize((new_size,))
 
-    def update_cluster(self, label, cluster):
+    def _update_cluster(self, label, cluster):
         """
         Update the cluster assignment for a label.
 
@@ -311,7 +313,7 @@ class GlobalIndex(BaseIndex):
             if self.verbose:
                 print(f"Warning! Label {label} not found in index, skipping cluster.")
 
-    def update_clusters(self, cluster_dict):
+    def update_clusters(self, cluster_dict, source_file=""):
         """
         Update the cluster assignments for a list of labels.
 
@@ -320,9 +322,22 @@ class GlobalIndex(BaseIndex):
         cluster_dict
         """
         for label, cluster in cluster_dict.items():
-            self.update_cluster(label, cluster)
+            self._update_cluster(label, cluster)
 
-    def add(self, labels, metadata={}, clusters=None, source_file=""):
+        self._update_index_log(
+            len(cluster_dict),
+            self.size(),
+            self.size(),
+            "modified clusters",
+            source_file,
+        )
+
+    def get_clusters(self):
+        """Return the cluster assignments."""
+
+        return {label: self.cluster[self[label]] for label in self._labels_cache}
+
+    def add(self, labels, metadata=None, clusters=None, source_file=""):
         """
         Add multiple labels and log the operation.
 
@@ -346,7 +361,7 @@ class GlobalIndex(BaseIndex):
                 raise ValueError("len(clusters) must match number of len(labels).")
 
             cluster_dict = dict(zip(labels, clusters))
-            self.update_cluster(cluster_dict)
+            self._update_cluster(cluster_dict)
 
         if post_size > pre_size:
             # Resize dependent datasets
