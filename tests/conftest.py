@@ -60,6 +60,12 @@ def tree_file():
 
 
 @pytest.fixture
+def battenberg_file():
+    """Provides the path to the tree file for testing."""
+    return os.path.join(TEST_DATA_DIR, "battenberg.tsv")
+
+
+@pytest.fixture
 def global_index(temp_h5_stream):
     """Fixture to create a BaseIndex instance."""
 
@@ -76,3 +82,9 @@ def global_index(temp_h5_stream):
 def pyclone_file():
     """Fixture to provide pyclone file for testing."""
     return os.path.join(TEST_DATA_DIR, "pyclone.tsv")
+
+
+@pytest.fixture
+def ascat_total_file():
+    """Fixture to provide pyclone file for testing."""
+    return os.path.join(TEST_DATA_DIR, "ASCAT.scprofile.txt")

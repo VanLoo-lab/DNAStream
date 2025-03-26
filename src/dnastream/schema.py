@@ -11,7 +11,7 @@ from .datatypes import (
     SEGMENT_LABEL_DTYPE,
     ALLELE_SPECIFIC_CN_DTYPE,
 )
-
+from .enums import GlobalIndexName, LocalIndexName, Modalities, TreeType, SchemaGroups
 
 MODALITIES = ["bulk", "lcm", "scdna"]
 
@@ -64,7 +64,7 @@ COPY_NUMBER_LAYER_DICT = {
 }
 
 GLOBAL_INDEX = {
-    "SNV": {
+    GlobalIndexName.SNV: {
         "cluster": {
             "dtype": "i8",
             "shape": (0,),
@@ -81,7 +81,7 @@ GLOBAL_INDEX = {
         "log": LOG_DICT,
         "tracked_tables": [("read_counts/variant", 0), ("read_counts/total", 0)],
     },
-    "sample": {
+    GlobalIndexName.SAMPLE: {
         "label": {
             "dtype": STR_DTYPE,
             "shape": (0,),
@@ -113,7 +113,7 @@ GLOBAL_INDEX = {
             for s in MODALITIES
         ],
     },
-    "SNP": {
+    GlobalIndexName.SNP: {
         "label": {
             "dtype": STR_DTYPE,
             "shape": (0,),
@@ -183,28 +183,28 @@ SCHEMA = {
             "chunks": (100,),
         }
     },
-    "trees": {
-        "SNV": {
+    SchemaGroups.TREES: {
+        TreeType.SNV: {
             "dtype": VLEN_EDGE_DTYPE,
             "shape": (0,),
             "maxshape": (None,),
             "chunks": (50,),
         },
-        "CNA": {
+        TreeType.CNA: {
             "dtype": STR_DTYPE,
             "shape": (0,),
             "maxshape": (None,),
             "chunks": (50,),
         },
-        "CLONAL": {
+        TreeType.CLONAL: {
             "dtype": STR_DTYPE,
             "shape": (0,),
             "maxshape": (None,),
             "chunks": (50,),
         },
     },
-    "copy_numbers": {s: COPY_NUMBER_LAYER_DICT for s in MODALITIES},
-    "read_counts": {
+    SchemaGroups.COPY_NUMBERS: {s: COPY_NUMBER_LAYER_DICT for s in Modalities},
+    SchemaGroups.READ_COUNTS: {
         "variant": {
             "dtype": "i",
             "shape": (0, 0),
@@ -218,7 +218,7 @@ SCHEMA = {
             "chunks": (1, 5000),
         },
     },
-    "allele_counts": {
+    SchemaGroups.ALLELE_COUNTS: {
         "variant": {
             "dtype": "i",
             "shape": (0, 0),

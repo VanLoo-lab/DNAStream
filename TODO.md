@@ -17,6 +17,7 @@
 - add layer for lcm coordinates
 - store path to bam files for each sample
 - fix metadata management
+<!-- - modify constants to use Enums in DNAStream -->
 
 ## Table modification features
 - fix safe mode
