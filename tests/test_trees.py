@@ -5,8 +5,11 @@ def test_add_snv_trees(dnastream_obj, tree_file):
     dnastream_obj.add_trees_from_file(tree_file, tree_type="SNV", method="conipher")
     # tree_data = dnastream_obj._get_data("tree/SNV_trees/metadata")
     tree_data = dnastream_obj.get_trees_snv_metadata()
-
     assert tree_data.shape[0] > 0, "No trees were added!"
+    assert (
+        dnastream_obj["trees/SNV"].shape[0] == 4
+    ), "dataset is larger than number of trees added!"
+
     # initial_tree_count = tree_data.shape[0]
 
     # # Ensure safe mode prevents duplicate additions

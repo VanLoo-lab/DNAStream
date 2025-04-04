@@ -66,3 +66,16 @@ def test_add_ascatsc(dnastream_obj, ascat_total_file):
         dnastream_obj["copy_numbers/scdna/logr"][seg_indices[0], sample_idx]
         == -0.716912189895419
     ), "logr for 0,0 should be 0.2"
+
+
+def test_add_read_counts(dnastream_obj, read_count_file):
+    """Test adding read counts."""
+
+    dnastream_obj.add_read_counts(
+        read_count_file, source="scdna", columns={"cell": "sample"}
+    )
+    snv_log = dnastream_obj.get_snv_log()
+    sample_log = dnastream_obj.get_sample_log()
+
+    assert not snv_log.empty
+    assert not sample_log.empty

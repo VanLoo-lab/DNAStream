@@ -23,18 +23,6 @@ SAPLING = "/rsrch6/home/genetics/vanloolab/llweber/MPNST/tree_building/trees/GEM
 #     ds.close()
 
 
-# def test_add_read_counts(temp_h5_file):
-#     """Test adding read counts."""
-#     ds = DNAStream(filename=temp_h5_file, verbose=True)
-#     ds.add_read_counts(READ_COUNT_FILE, source="scdna")
-#     snv_log = ds.get_snv_log()
-#     sample_log = ds.get_sample_log()
-
-#     assert not snv_log.empty
-#     assert not sample_log.empty
-#     ds.close()
-
-
 # def test_log_retrieval(temp_h5_file):
 #     """Test that logs are correctly retrieved after modifications."""
 #     ds = DNAStream(filename=temp_h5_file, verbose=True)

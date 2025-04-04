@@ -159,25 +159,48 @@ class DNAStream:
         Closes the HDF5 file.
     """
 
-    def __init__(
-        self, filename, initialize=True, verbose=False, id=None, sex=None, safe=True
-    ):
+    def __init__(self, filename, verbose=False, id=None, sex=None, safe=True):
         """Initialize HDF5 storage."""
         self.filename = filename
         self.verbose = verbose
         self.safe = safe
 
-        self.file = h5py.File(filename, "a")  # Append mode (does not overwrite)
-        if self.verbose:
-            print(f"#Stream to connection {self.filename} open...")
+        self.global_idx = {}
+        self.local_idx = {}
+        self.in_context = False
 
-        # only for 1D unchunked data, like logs, dataframes, tree lists
-        # multi-dimensional data tables like READ_COUNTS, must be built separately
-        # to optimize chunking and shape specification
-        if initialize:
-            self._recursive_build(SCHEMA)
+    def __enter__(self):
+        """Context manager for opening the HDF5 file."""
+        self.in_context = True
+        self.connect()
+        return self
 
-        self.global_idx = {}  # Dictionary to store global indices
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.in_context = False
+        self.close()
+
+    def _connect(self, mode="a"):
+        if not self.in_context:
+            print(
+                "⚠️ Warning: You are connecting outside of a context manager. This is not recommended as runtime errors may corrupt the file."
+            )
+        if not self._is_connected():
+            self.file = h5py.File(
+                self.filename, mode
+            )  # Append mode (does not overwrite)
+            if self.verbose:
+                print(f"#Stream to connection {self.filename} open...")
+        else:
+            if self.verbose:
+                print(f"#Stream to connection {self.filename} already open...")
+
+    def connect(self):
+        self._connect()
+
+        # create index objects and bound class methods
+        self._init_indices()
+
+    def _init_indices(self):
 
         # Initialize built-in global indices
         for index_name in GLOBAL_INDEX:
@@ -187,8 +210,6 @@ class DNAStream:
                 tracked_tables=GLOBAL_INDEX[index_name]["tracked_tables"],
             )
 
-        self.local_idx = {}
-
         for index_name in LOCAL_INDEX:
             self.create_local_index(
                 index_name,
@@ -196,8 +217,12 @@ class DNAStream:
                 tracked_tables=LOCAL_INDEX[index_name]["tracked_tables"],
             )
 
-        if id:
-            self.set_patient_id(id)
+    def initialize(self, patient, sex, overwrite=False):
+        """Build and connect to an HDF5 file"""
+        self._connect(mode="w" if overwrite else "a")
+        if patient:
+            self.set_patient_id(patient)
+
         else:
             self.set_patient_id("")
 
@@ -205,11 +230,9 @@ class DNAStream:
             self.set_patient_sex(sex)
         else:
             self.set_patient_sex("")
-
-        if not self.safe and id:
-            self.set_patient_id(id)
-        if not self.safe and sex:
-            self.set_patient_sex(sex)
+        self._recursive_build(SCHEMA)
+        # self._init_indices()
+        self.close()
 
     def __str__(self):
         """To string method"""
@@ -291,7 +314,7 @@ class DNAStream:
             # setattr(DNAStream, method_name, method)
 
         if self.verbose:
-            print(f"Created global index '{index_name}' and bound methods.")
+            print(f"#Loading global index '{index_name}' and bound methods...")
 
     def create_local_index(self, index_name, metadata_dtype=None, tracked_tables=None):
         """
@@ -364,7 +387,7 @@ class DNAStream:
             setattr(self, method_name, method.__get__(self))
 
         if self.verbose:
-            print(f"Created local index '{index_name}' and bound methods.")
+            print(f"#Loading local index '{index_name}' and bound methods...")
 
     def get_dtype(self, table):
         return self[table].dtype
@@ -444,7 +467,7 @@ class DNAStream:
         """
         if path not in self.file:
             if self.verbose:
-                print(f"Creating dataset {path}...")
+                print(f"#Creating dataset {path}...")
             self.file.create_dataset(path, dtype=dtype, **kwargs)
             if columns:
                 self[path].attrs["columns"] = columns
@@ -501,8 +524,8 @@ class DNAStream:
     def safe_mode_disable(self):
         self.safe = False
 
-    @timeit
-    def add_read_counts(self, fname, source, location=None):
+    # @timeit
+    def add_read_counts(self, fname, source, columns=None, location=None):
         """
         Add variant and total read count data for SNVs from a file.
 
@@ -526,68 +549,87 @@ class DNAStream:
             If an error occurs during file processing.
         """
         try:
-            rc = pd.read_csv(
-                fname, names=["snv", "sample", "var", "total"], header=None, skiprows=1
-            )
+            rc = pd.read_csv(fname)
+
+            if columns:
+                rc.rename(columns=columns, inplace=True)
+
+            for col in ["snv", "sample", "alt", "total"]:
+                if col not in rc.columns:
+                    raise ValueError(f"Column '{col}' not found in the input file.")
 
             samples = rc["sample"].unique().tolist()
 
             snvs = rc["snv"].unique().tolist()
+            self.batch_snv_add(snvs, source_file=fname)
 
-            snv_idx = self.batch_snv_add(snvs, source_file=fname)
+            self.batch_sample_add(samples, source_file=fname)
 
-            sample_idx = self.batch_sample_add(samples, source_file=fname)
-            sample_indices = list(sample_idx.values())
-            if source:
-                self._update_value(
-                    sample_indices,
-                    f"{GlobalIndexName.SAMPLE.value}/metadata",
-                    "source",
-                    source,
-                )
+            sample_indices_arr = np.array(
+                self.indices_by_sample_label(rc["sample"]), dtype=int
+            )
+            snv_indices_arr = np.array(self.indices_by_snv_label(rc["snv"]), dtype=int)
 
-            if location:
-                self._update_value(
-                    sample_indices,
-                    f"{GlobalIndexName.SAMPLE.value}/metadata",
-                    "location",
-                    location,
-                )
+            # if source:
+            #     self._update_value(
+            #         sample_indices,
+            #         f"{GlobalIndexName.SAMPLE.value}/metadata",
+            #         "source",
+            #         source,
+            #     )
 
-            # Map indices for SNVs and samples
-            rc["snv_idx"] = rc["snv"].map(snv_idx)
-            rc["sample_idx"] = rc["sample"].map(sample_idx)
+            # if location:
+            #     self._update_value(
+            #         sample_indices,
+            #         f"{GlobalIndexName.SAMPLE.value}/metadata",
+            #         "location",
+            #         location,
+            #     )
 
-            # Convert to NumPy arrays for efficient updates
-            snv_indices_arr = rc["snv_idx"].to_numpy()
-            sample_indices_arr = rc["sample_idx"].to_numpy()
-            var_counts = rc["var"].to_numpy()
-            total_counts = rc["total"].to_numpy()
-
-            # **Sort indices to satisfy HDF5 fancy indexing rules**
-            sorted_order = np.lexsort((sample_indices_arr, snv_indices_arr))
-            snv_indices_arr = snv_indices_arr[sorted_order]
-            sample_indices_arr = sample_indices_arr[sorted_order]
-            var_counts = var_counts[sorted_order]
-            total_counts = total_counts[sorted_order]
+            var_counts = rc["alt"].astype(int).to_numpy()
+            total_counts = rc["total"].astype(int).to_numpy()
 
             # Update dataset in batch instead of looping
-            dat = self[f"read_counts"]
+            dat = self["read_counts"]
+            # unique_snv_indices = np.unique(snv_indices_arr)  # Get unique SNV indices
+
             unique_snv_indices = np.unique(snv_indices_arr)  # Get unique SNV indices
 
             for snv in unique_snv_indices:
-                mask = snv_indices_arr == snv  # Select all entries for this snv index
-                dat["variant"][snv, sample_indices_arr[mask]] = var_counts[mask]
-                dat["total"][snv, sample_indices_arr[mask]] = total_counts[mask]
+                mask = snv_indices_arr == snv
+                s_indices = sample_indices_arr[mask]
+                # Ensure that the sample indices (and corresponding values) are sorted
+                order = np.argsort(s_indices)
+                s_indices = s_indices[order]
+                var_vals = var_counts[mask][order]
+                tot_vals = total_counts[mask][order]
+
+                dat["variant"][snv, s_indices] = var_vals
+                dat["total"][snv, s_indices] = tot_vals
+
+                # if len(s_indices) == 0:
+                #     continue
+
+                # # If the sample indices are contiguous, update via slicing.
+                # if np.all(np.diff(s_indices) == 1):
+                #     start_idx = s_indices[0]
+                #     end_idx = s_indices[-1] + 1
+                #     dat["variant"][snv, start_idx:end_idx] = var_vals
+                #     dat["total"][snv, start_idx:end_idx] = tot_vals
+                # else:
+                #     # Otherwise, update element-by-element.
+                #     for si, v, t in zip(s_indices, var_vals, tot_vals):
+                #         dat["variant"][snv, si] = v
+                #         dat["total"][snv, si] = t
 
             for arr in ["variant", "total"]:
                 self._log_dataset_modification(
                     f"read_counts/{arr}", operation="update", source_file=fname
                 )
 
-        except Exception as e:
+        except Exception:
             self.close()
-            raise Exception(e)
+            raise
 
     def _add_read_count(self, snv_idx, sample_idx, var=0, total=0):
         """
@@ -926,10 +968,10 @@ class DNAStream:
 
             self.add_snv_data(indices, snv_data, source_file=fname)
 
-        except Exception as e:
+        except Exception:
 
             self.close()
-            raise Exception(e)
+            raise
 
     @staticmethod
     def _parse_file(fname, sep_word="tree", nskip=0, sep="\t"):
@@ -995,9 +1037,9 @@ class DNAStream:
 
         try:
             self._add_trees(tree_list, "SNV", scores, method)
-        except Exception as e:
+        except Exception:
             self.close()
-            raise Exception(e)
+            raise
 
     def _add_trees(self, tree_list, tree_type, scores, method="", source_file=""):
         """
@@ -1023,12 +1065,12 @@ class DNAStream:
         tree_indices = list(tree_dict.values())
 
         numtrees = len(tree_dict)
-        self._expand(table_name, numtrees)
+        # self._expand(table_name, numtrees)
 
         # Add the tree metadata to the file
         data_dtype = LOCAL_INDEX[f"trees_{tree_type}"]["metadata"]["dtype"]
         tree_dtype = self.get_dtype(f"{SchemaGroups.TREES.value}/{tree_type}")
-        print("HERE!")
+
         if not scores:
             dat = np.array(
                 [(lab, method, np.nan, -1, source_file) for lab in tree_dict],
@@ -1145,9 +1187,9 @@ class DNAStream:
             if self.verbose:
                 print(f"#{len(tree_list)} {tree_type} trees added from {method}.")
 
-        except Exception as e:
+        except Exception:
             self.close()
-            raise Exception(e)
+            raise
 
     def add_snv_tree_from_edge_list(
         self, edge_list, method="", score=np.nan, rank=np.nan
@@ -1247,18 +1289,17 @@ class DNAStream:
             A dictionary mapping table names to their extracted NumPy arrays.
         """
 
-        snv_idx, sample_idx = self.load_indices()
-        if snv_labels:
+        # if snv_labels:
 
-            snv_indices = [snv_idx[l] for l in snv_labels]
+        #     snv_indices = [snv_idx[l] for l in snv_labels]
 
-        if sources is not None:
-            sample_indices = self._extract_indices_by_column(
-                "sample/metadata", "source", sources
-            )
-        elif sample_labels is not None:
+        # if sources is not None:
+        #     sample_indices = self._extract_indices_by_column(
+        #         "sample/metadata", "source", sources
+        #     )
+        # elif sample_labels is not None:
 
-            sample_indices = [sample_idx[l] for l in sample_labels]
+        #     sample_indices = [sample_idx[l] for l in sample_labels]
 
         return {
             table: self._extract_data(
@@ -1388,9 +1429,9 @@ class DNAStream:
                 source_file=fname,
             )
 
-        except Exception as e:
+        except Exception:
             self.close()
-            raise Exception(e)
+            raise
 
     def parse_ascat_sc_total_copy_number_file(self, fname, sample_label):
         """
@@ -1454,9 +1495,9 @@ class DNAStream:
                 source_file=fname,
             )
 
-        except Exception as e:
+        except Exception:
             self.close()
-            raise Exception(e)
+            raise
 
     def segment_lookup(self, locus, group_name):
         """
@@ -1615,6 +1656,13 @@ class DNAStream:
             f"copy_numbers/{sample_label}", operation="create", source_file=source_file
         )
 
+    def _is_connected(self):
+        if not hasattr(self, "file"):
+            return False
+        else:
+            return self.file.id.valid
+        # self.file = h5py.File(self.filename, "a")  # Append mode
+
     def close(self):
         """
         Close the HDF5 file safely.
@@ -1624,6 +1672,10 @@ class DNAStream:
         for _, global_idx in self.global_idx.items():
             global_idx.save_index()
 
-        self.file.close()
-        if self.verbose:
-            print(f"#Stream to connection {self.filename} closed.")
+        if self._is_connected():
+
+            self.file.close()
+            if self.verbose:
+                print(f"#Stream to connection {self.filename} closed.")
+        else:
+            print("#Stream to connection is already closed.")
