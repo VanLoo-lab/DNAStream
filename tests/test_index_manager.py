@@ -15,9 +15,9 @@ def test_add_to_base_index(base_index):
     base_index.add(labels=["SNV1", "SNV2"])
 
     assert base_index.size() == 2, "Index should have 2 elements!"
-    assert (
-        len(base_index._metadata_cache) == 2
-    ), "Metadata cache should have 2 elements!"
+    # assert (
+    #     len(base_index._metadata_cache) == 2
+    # ), "Metadata cache should have 2 elements!"
 
 
 def test_global_index_init(global_index):

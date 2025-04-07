@@ -1,0 +1,4 @@
+sample_name,organism,library_strategy,library_source,library_selection,library_layout,platform,model,center_name,run,study,coverage,modality,location,bam_file_path,batch_id,reference_build,pipeline_version,date_of_sequencing
+Sample_001,Homo sapiens,WGS,GENOMIC,RANDOM,PAIRED,ILLUMINA,HiSeq2500,MDACC,SRR1234567,SRP999999,30,bulk,tumor_core,/path/to/Sample_001.bam,Batch_A,hg38,v1.2.3,2024-05-01
+Sample_002,Homo sapiens,scDNA,GENOMIC,PCR,SINGLE,ILLUMINA,NextSeq550,MDACC,SRR1234568,SRP999999,5,scdna,tumor_edge,/path/to/Sample_002.bam,Batch_A,hg38,v1.2.3,2024-05-02
+Sample_003,Homo sapiens,WXS,GENOMIC,Hybrid Selection,PAIRED,ILLUMINA,Novaseq6000,Broad,SRR1234569,SRP999999,100,lcm,tumor_core,/path/to/Sample_003.bam,Batch_B,hg19,v1.2.3,2024-06-15

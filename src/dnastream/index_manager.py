@@ -87,14 +87,27 @@ class BaseIndex:
         self.labels.resize((new_size,))
         self.metadata.resize((new_size,))
 
+    def flush_metadata(self):
+        """Write metadata cache to disk."""
+        if self.metadata.shape[0] != len(self._metadata_cache):
+            self.metadata.resize((len(self._metadata_cache),))
+        self.metadata[:] = self._metadata_cache
+
+    def flush_labels(self):
+        """Write metadata cache to disk."""
+        self._resize(new_size=self.size())
+        # write the cache to disk
+        self.labels[:] = self._labels_cache
+
     def _save_index(self):
         """Save index to HDF5 dataset if modified."""
         if self._modified:
-            self._resize(new_size=self.size())
+            self.flush_labels()
 
-            # write the cache to disk
-            self.labels[:] = self._labels_cache  # Update HDF5 dataset
-            self.metadata[:] = self._metadata_cache  # Expand dataset
+            # Update HDF5 dataset
+
+            self.flush_metadata()
+            # self.metadata[:] = self._metadata_cache  # Expand dataset
             self._modified = False  # Reset modification flag
 
             # Update last saved timestamp
@@ -119,6 +132,25 @@ class BaseIndex:
             return b""  # Use bytes for fixed-length strings
         else:
             raise ValueError(f"Unhandled metadata field type: {field_type}")
+
+    def _check_and_convert_dtype(self, field, value):
+        """Check and convert value to match expected dtype for metadata insertion."""
+        dtype = self.dat_dtype[field]
+        try:
+            if isinstance(dtype, h5py.Datatype) or dtype.kind == "O":
+                return str(value)
+            elif np.issubdtype(dtype, np.bytes_):
+                return str(value).encode("utf-8")
+            elif np.issubdtype(dtype, np.integer):
+                return int(value)
+            elif np.issubdtype(dtype, np.floating):
+                return float(value)
+            else:
+                return value
+        except Exception as e:
+            raise ValueError(
+                f"Failed to convert field '{field}' with value '{value}' to dtype '{dtype}': {e}"
+            )
 
     def add_tracked_table(self, table_name, axis):
         if table_name not in self.file:
@@ -167,7 +199,40 @@ class BaseIndex:
 
         return df
 
-    def add(self, labels, metadata=None):
+    def insert_metadata(self, metadata_dict):
+        """
+        Insert or update metadata for existing labels.
+
+        Parameters
+        ----------
+        metadata_dict : Dict[str, Dict[str, Any]]
+            Mapping from labels to a dict of metadata field names and values.
+            Missing fields are filled with default values during index creation.
+            Fields not included in a metadata row will be left unchanged.
+        """
+        if not metadata_dict:
+            return
+
+        # Ensure all labels are in the index (adds them if not already there)
+        added_indices = self.add(list(metadata_dict.keys()))  # {label: index}
+
+        # For each label, update metadata in-place
+        for label, idx in added_indices.items():
+            row_data = metadata_dict[label]
+            for field, value in row_data.items():
+                if field in self.dat_dtype.names:
+
+                    self._metadata_cache[idx][field] = self._check_and_convert_dtype(
+                        field, value
+                    )
+                else:
+                    if self.verbose:
+                        print(
+                            f"#Warning: field '{field}' not in metadata dtype for {self.group}. Skipping."
+                        )
+        self._modified = True
+
+    def add(self, labels):
         """
         Add multiple labels to the index.
 
@@ -187,25 +252,16 @@ class BaseIndex:
                 post_size += 1
                 self._modified = True  # Mark dataset as modified
 
-        new_metadata = np.zeros(len(added_indices), dtype=self.dat_dtype)
-
-        if not metadata:
-            metadata = {}
-        # Assign metadata values (use default if not provided)
-        for i, (label, idx) in enumerate(added_indices.items()):
-            entry_metadata = metadata.get(
-                label, {}
-            )  # Get metadata dict for label or empty dict
-            for field in self.dat_dtype.names:  # Loop through all fields in dtype
-                new_metadata[i][field] = entry_metadata.get(
-                    field, self._default_metadata_value(field)
-                )
-
-        # Insert new metadata into the cache
-        self._metadata_cache = np.concatenate((self._metadata_cache, new_metadata))
-
         if pre_size != post_size:
             self._resize_tracked_tables(post_size)
+
+        for _ in range(post_size - pre_size):
+            default_row = tuple(
+                self._default_metadata_value(f) for f in self.dat_dtype.names
+            )
+            self._metadata_cache = np.append(
+                self._metadata_cache, np.array([default_row], dtype=self.dat_dtype)
+            )
 
         self._save_index()  # Save if modified
         return {label: self._index_cache[label] for label in labels}
@@ -282,20 +338,46 @@ class BaseIndex:
                         f"Warning {table_name} not in file! skipping resizing. Modify tracked tables for {self.group} index to suppress this warning."
                     )
 
-    def get_metadata(self, labels=None):
-        """Get metadata for a given label.
+    def get_metadata(self, labels=None, format="numpy"):
+        """
+        Get metadata for specified labels in a given format.
 
         Parameters
         ----------
         labels : list of str, optional
-            The labels of the metadata to return.
+            Labels to retrieve metadata for. If None, returns all.
+        format : str, optional
+            Output format: "numpy", "dict", or "pandas". Default is "numpy".
 
+        Returns
+        -------
+        np.ndarray, dict, or pd.DataFrame
+            Metadata in the requested format.
         """
         if labels:
             idxs = [self[label] for label in labels]
-            return self._get_data(self.metadata, idxs)
+            data = self._metadata_cache[idxs]
+            label_subset = labels
         else:
-            return self._get_data(self.metadata)
+            data = self._metadata_cache
+            label_subset = self.get_labels()
+
+        if format == "numpy":
+            return data
+        elif format == "dict":
+            return {
+                label: {field: row[field] for field in data.dtype.names}
+                for label, row in zip(label_subset, data)
+            }
+        elif format == "pandas":
+            df = pd.DataFrame(data)
+            for col in df.select_dtypes(include=["object"]):
+                df[col] = df[col].apply(
+                    lambda x: x.decode("utf-8") if isinstance(x, bytes) else x
+                )
+            return df
+        else:
+            raise ValueError(f"Unsupported format: {format}")
 
 
 class GlobalIndex(BaseIndex):
@@ -381,7 +463,7 @@ class GlobalIndex(BaseIndex):
 
         return {label: self.cluster[self[label]] for label in self._labels_cache}
 
-    def add(self, labels, metadata=None, clusters=None, source_file=""):
+    def add(self, labels, source_file=""):
         """
         Add multiple labels and log the operation.
 
@@ -397,21 +479,22 @@ class GlobalIndex(BaseIndex):
             The source file that triggered the modification.
         """
         pre_size = self.size()
-        super().add(labels, metadata)
+        index_dict = super().add(labels)
         post_size = self.size()
 
-        if clusters:
-            if len(clusters) != len(labels):
-                raise ValueError("len(clusters) must match number of len(labels).")
+        # if clusters:
+        #     if len(clusters) != len(labels):
+        #         raise ValueError("len(clusters) must match number of len(labels).")
 
-            cluster_dict = dict(zip(labels, clusters))
-            self._update_cluster(cluster_dict)
+        #     cluster_dict = dict(zip(labels, clusters))
+        #     self._update_cluster(cluster_dict)
 
         if post_size > pre_size:
             # Resize dependent datasets
             self._update_index_log(
                 post_size - pre_size, pre_size, post_size, "add", source_file
             )
+        return index_dict
 
     def _update_index_log(self, num, pre_size, post_size, operation, source_file=""):
         """
@@ -508,3 +591,36 @@ class LocalIndex(BaseIndex):
     def get_labels(self):
         """Return labels for this local index."""
         return self._labels_cache
+
+
+class DependentIndexView:
+    def __init__(self, global_index, tracked_tables, predicate_fn, file, verbose=False):
+        self.global_index = global_index
+        self.tracked_tables = tracked_tables  # list of (table_name, axis)
+        self.predicate_fn = predicate_fn
+        self.file = file
+        self.verbose = verbose
+
+    def add(self, labels):
+        """Add labels that match the predicate and resize only relevant tracked tables."""
+        metadata = self.global_index.get_metadata(labels)
+        filtered_labels = [
+            l for l, row in zip(labels, metadata) if self.predicate_fn(row)
+        ]
+
+        if self.verbose:
+            print(
+                f"#Filtering {len(filtered_labels)} matching labels for DependentIndexView..."
+            )
+
+        for table_name, axis in self.tracked_tables:
+            if table_name not in self.file:
+                continue
+            current_shape = self.file[table_name].shape
+            if axis == 0:
+                new_shape = (current_shape[0] + len(filtered_labels), current_shape[1])
+            else:
+                new_shape = (current_shape[0], current_shape[1] + len(filtered_labels))
+            self.file[table_name].resize(new_shape)
+
+        return filtered_labels

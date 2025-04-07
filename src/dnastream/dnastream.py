@@ -1,5 +1,6 @@
 import sys
 import os
+import csv
 import getpass
 import socket
 import pathlib
@@ -13,7 +14,7 @@ from enum import Enum
 
 
 # import json
-from .index_manager import LocalIndex, GlobalIndex
+from .index_manager import LocalIndex, GlobalIndex, DependentIndexView
 from .enums import GlobalIndexName, LocalIndexName, Modalities, TreeType, SchemaGroups
 
 from .schema import (
@@ -217,6 +218,51 @@ class DNAStream:
                 tracked_tables=LOCAL_INDEX[index_name]["tracked_tables"],
             )
 
+        def is_lcm_sample(meta):
+            return meta["modality"].lower() == b"lcm"
+
+        self.copy_number_lcm_view = DependentIndexView(
+            global_index=self.global_idx["sample"],
+            tracked_tables=[
+                ("copy_numbers/lcm/logr", 1),
+                ("copy_numbers/lcm/baf", 1),
+                ("copy_numbers/lcm/profile", 1),
+            ],
+            predicate_fn=is_lcm_sample,
+            file=self.file,
+            verbose=self.verbose,
+        )
+
+        def is_bulk_sample(meta):
+            return meta["modality"].lower() == b"bulk"
+
+        self.copy_number_bulk_view = DependentIndexView(
+            global_index=self.global_idx["sample"],
+            tracked_tables=[
+                ("copy_numbers/bulk/logr", 1),
+                ("copy_numbers/bulk/baf", 1),
+                ("copy_numbers/bulk/profile", 1),
+            ],
+            predicate_fn=is_bulk_sample,
+            file=self.file,
+            verbose=self.verbose,
+        )
+
+        def is_scdna_sample(meta):
+            return meta["modality"].lower() == b"scdna"
+
+        self.copy_number_scdna_view = DependentIndexView(
+            global_index=self.global_idx["sample"],
+            tracked_tables=[
+                ("copy_numbers/scdna/logr", 1),
+                ("copy_numbers/scdna/baf", 1),
+                ("copy_numbers/scdna/profile", 1),
+            ],
+            predicate_fn=is_scdna_sample,
+            file=self.file,
+            verbose=self.verbose,
+        )
+
     def initialize(self, patient, sex, overwrite=False):
         """Build and connect to an HDF5 file"""
         self._connect(mode="w" if overwrite else "a")
@@ -291,6 +337,7 @@ class DNAStream:
             "update_clusters": "update_{}_clusters",
             "get_log": "get_{}_log",
             "get_metadata": "get_{}_metadata",
+            "insert_metadata": "insert_{}_metadata",
             "label_to_idx": "{}_label_to_idx",
             "resize": "{}_resize",
             "indices_by_label": "indices_by_{}_label",
@@ -363,6 +410,7 @@ class DNAStream:
             "get_labels": "get_{}_labels",
             "size": "get_{}_size",
             "get_index": "get_{}_index",
+            "insert_metadata": "insert_{}_metadata",
             "get_metadata": "get_{}_metadata",
             "label_to_idx": "{}_label_to_idx",
             "resize": "{}_resize",
@@ -525,7 +573,7 @@ class DNAStream:
         self.safe = False
 
     # @timeit
-    def add_read_counts(self, fname, source, columns=None, location=None):
+    def add_read_counts(self, fname, columns=None):
         """
         Add variant and total read count data for SNVs from a file.
 
@@ -1308,7 +1356,42 @@ class DNAStream:
             for table in tables
         }
 
-    def parse_battenberg_file(self, fname, sample_label, sample_metadata=None):
+    def load_metadata(self, fname, index_name, label_col):
+        """
+         Reads sample metadata from a CSV file, adds any new sample names to the index,
+         and inserts metadata into the /sample/metadata table in the HDF5 file.
+
+         Parameters
+         ----------
+        fname : str
+             Path to the metadata CSV.
+         index_name : str
+             Name of the index to be updated.
+         label_col : str
+             Column name in the CSV that contains the labels for the index.
+        """
+        try:
+            metadata_dict = {}
+            with open(fname, newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    label = row[label_col]
+                    metadata_dict[label] = {
+                        k: v for k, v in row.items() if k != label_col
+                    }
+
+            if index_name not in self.global_idx:
+                raise ValueError(f"Index '{index_name}' not found in global_idx.")
+
+            self.global_idx[index_name].insert_metadata(metadata_dict)
+            table_name = f"{index_name}/metadata"
+            self._log_dataset_modification(table_name, "update", source_file=fname)
+
+        except Exception:
+            self.close()
+            raise
+
+    def parse_battenberg_file(self, fname, sample_label):
         """
         Parse a Battenberg file and extract the copy number data.
 
@@ -1337,10 +1420,13 @@ class DNAStream:
         try:
             df = pd.read_csv(fname, sep="\t")
 
-            self.batch_sample_add(
-                [sample_label], metadata=sample_metadata, source_file=fname
+            self.batch_sample_add([sample_label], source_file=fname)
+
+            self.insert_sample_metadata(
+                {sample_label: {"modality": Modalities.BULK.value}}
             )
 
+            self.copy_number_bulk_view.add([sample_label])
             sample_idx = self.global_idx[GlobalIndexName.SAMPLE.value][sample_label]
 
             cn_labels = (
@@ -1357,7 +1443,6 @@ class DNAStream:
             logr_dict = dict(zip(cn_labels, df["LogR"]))
             baf_dict = dict(zip(cn_labels, df["BAF"]))
 
-            props = {}
             # for i, row in df.iterrows():
             #     label = cn_labels[i]
 
@@ -1433,7 +1518,9 @@ class DNAStream:
             self.close()
             raise
 
-    def parse_ascat_sc_total_copy_number_file(self, fname, sample_label):
+    def parse_ascat_sc_total_copy_numbers(
+        self, fname, sample_label, modality=Modalities.SCDNA.value
+    ):
         """
         Parse an ASCAT SC total copy number file and extract the copy number data.
 
@@ -1441,12 +1528,41 @@ class DNAStream:
         ----------
         fname : str
             Path to the ASCAT SC total copy number file to parse.
+        sample_label : str
+            Label for the sample being added.
+        modality : str
+            Modality of the sample (e.g., "scdna", "lcm"). Default is "scdna".
         """
 
         try:
+
+            try:
+                modality_enum = Modalities(modality)
+            except ValueError:
+                raise ValueError(f"Modality '{modality}' not recognized.")
+
             df = pd.read_csv(fname, sep="\t")
 
+            required_columns = [
+                "chromosome",
+                "start",
+                "end",
+                "logr",
+                "total_copy_number",
+            ]
+            missing = [col for col in required_columns if col not in df.columns]
+            if missing:
+                raise ValueError(f"Missing columns in {fname}: {missing}")
+
             self.batch_sample_add([sample_label], source_file=fname)
+            self.insert_sample_metadata(
+                {sample_label: {"modality": modality_enum.value}}
+            )
+
+            if modality_enum == Modalities.SCDNA:
+                self.copy_number_scdna_view.add([sample_label])
+            elif modality_enum == Modalities.LCM:
+                self.copy_number_lcm_view.add([sample_label])
 
             sample_idx = self.global_idx[GlobalIndexName.SAMPLE.value][sample_label]
 

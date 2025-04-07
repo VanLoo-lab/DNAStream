@@ -17,16 +17,16 @@ SNV_DTYPE = np.dtype(
     ]
 )
 
-# datatype to store metadata for sample index
-SAMPLE_DTYPE = np.dtype(
-    [
-        ("label", STR_DTYPE),  # sample description
-        ("patient", "S10"),  # Fixed-length string (10 characters max)
-        ("source", "S10"),  # Fixed-length string (10 characters max)
-        ("location", "S15"),  # Fixed-length string (15 characters max)
-        ("file", STR_DTYPE),  #
-    ]
-)
+# # datatype to store metadata for sample index
+# SAMPLE_DTYPE = np.dtype(
+#     [
+#         ("label", STR_DTYPE),  # sample description
+#         ("patient", "S10"),  # Fixed-length string (10 characters max)
+#         ("source", "S10"),  # Fixed-length string (10 characters max)
+#         ("location", "S15"),  # Fixed-length string (15 characters max)
+#         ("file", STR_DTYPE),  #
+#     ]
+# )
 
 # datatype to for the index modification logs
 LOG_DTYPE = np.dtype(

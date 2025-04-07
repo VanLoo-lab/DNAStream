@@ -4,13 +4,14 @@ from .datatypes import (
     STR_DTYPE,
     LOG_DTYPE,
     SNV_DTYPE,
-    SAMPLE_DTYPE,
     VLEN_EDGE_DTYPE,
     DATASET_LOG_DTYPE,
     TREE_DTYPE,
     SEGMENT_LABEL_DTYPE,
     ALLELE_SPECIFIC_CN_DTYPE,
 )
+
+from .metadata import SAMPLE_DTYPE
 from .enums import GlobalIndexName, LocalIndexName, Modalities, TreeType, SchemaGroups
 
 MODALITIES = ["bulk", "lcm", "scdna"]
@@ -106,12 +107,12 @@ GLOBAL_INDEX = {
             (f"{ctab}/{ctype}", 1)
             for ctab in ["read_counts", "allele_counts"]
             for ctype in ["variant", "total"]
-        ]
-        + [
-            (f"copy_numbers/{s}/{ctab}", 1)
-            for ctab in ["profile", "logr", "baf"]
-            for s in MODALITIES
         ],
+        # + [
+        #     (f"copy_numbers/{s}/{ctab}", 1)
+        #     for ctab in ["profile", "logr", "baf"]
+        #     for s in MODALITIES
+        # ],
     },
     GlobalIndexName.SNP: {
         "label": {

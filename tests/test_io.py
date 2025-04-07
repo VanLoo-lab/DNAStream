@@ -40,7 +40,7 @@ def test_add_battenberg(dnastream_obj, battenberg_file):
 
 
 def test_add_ascatsc(dnastream_obj, ascat_total_file):
-    dnastream_obj.parse_ascat_sc_total_copy_number_file(
+    dnastream_obj.parse_ascat_sc_total_copy_numbers(
         ascat_total_file, sample_label="my_test_sample"
     )
     assert (
@@ -71,11 +71,14 @@ def test_add_ascatsc(dnastream_obj, ascat_total_file):
 def test_add_read_counts(dnastream_obj, read_count_file):
     """Test adding read counts."""
 
-    dnastream_obj.add_read_counts(
-        read_count_file, source="scdna", columns={"cell": "sample"}
-    )
+    dnastream_obj.add_read_counts(read_count_file, columns={"cell": "sample"})
     snv_log = dnastream_obj.get_snv_log()
     sample_log = dnastream_obj.get_sample_log()
 
     assert not snv_log.empty
     assert not sample_log.empty
+
+
+def test_add_sample_metadata(dnastream_obj, sample_metadata_file):
+    dnastream_obj.load_metadata(sample_metadata_file, "sample", "sample_name")
+    assert dnastream_obj.get_sample_size() > 0

@@ -50,12 +50,11 @@ def base_index(temp_h5_stream):
 @pytest.fixture
 def dnastream_obj(temp_h5_file):
     """Provides a DNAStream instance for testing."""
-    ds = DNAStream(temp_h5_file, verbose=False)
+    ds = DNAStream(temp_h5_file, verbose=True)
     ds.initialize(patient="GEM2.1", sex="F", overwrite=True)
-    with ds:
-        # ds.initialize(patient="GEM2.1", sex="F")
-
-        yield ds
+    ds.connect()
+    yield ds
+    ds.close()
     # ds.close()
 
 
@@ -100,3 +99,9 @@ def ascat_total_file():
 def read_count_file():
     """Fixture to provide pyclone file for testing."""
     return os.path.join(TEST_DATA_DIR, "read_counts.csv")
+
+
+@pytest.fixture
+def sample_metadata_file():
+    """Fixture to provide pyclone file for testing."""
+    return os.path.join(TEST_DATA_DIR, "sample_metadata.csv")
