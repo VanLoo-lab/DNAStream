@@ -3,7 +3,8 @@ import pytest
 import h5py
 from dnastream import DNAStream
 from dnastream.index_manager import LocalIndex, GlobalIndex
-from dnastream.datatypes import SNV_DTYPE, STR_DTYPE
+from dnastream.datatypes import STR_DTYPE
+from dnastream.metadata import SNV_DTYPE
 
 # Define test data directory
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -93,6 +94,11 @@ def pyclone_file():
 def ascat_total_file():
     """Fixture to provide pyclone file for testing."""
     return os.path.join(TEST_DATA_DIR, "ASCAT.scprofile.txt")
+
+@pytest.fixture
+def ascat_as_file():
+    """Fixture to provide ASCATsc allele-specific file for testing."""
+    return os.path.join(TEST_DATA_DIR, "AS_ascat_profile.txt")
 
 
 @pytest.fixture

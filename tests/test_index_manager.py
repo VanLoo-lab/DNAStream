@@ -1,4 +1,4 @@
-from dnastream.datatypes import SNV_DTYPE
+from dnastream.metadata import SNV_DTYPE
 
 
 def test_base_index_init(base_index):

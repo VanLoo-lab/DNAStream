@@ -1615,6 +1615,123 @@ class DNAStream:
             self.close()
             raise
 
+    def parse_ascat_sc_allele_specific_copy_numbers(
+        self, fname, sample_label, modality=Modalities.SCDNA.value
+    ):
+        """
+        Parse an ASCAT SC total copy number file and extract the copy number data.
+
+        Parameters
+        ----------
+        fname : str
+            Path to the ASCAT SC total copy number file to parse.
+        sample_label : str
+            Label for the sample being added.
+        modality : str
+            Modality of the sample (e.g., "scdna", "lcm"). Default is "scdna".
+        """
+
+        try:
+
+            try:
+                modality_enum = Modalities(modality)
+            except ValueError:
+                raise ValueError(f"Modality '{modality}' not recognized.")
+
+            df = pd.read_csv(fname, sep="\t")
+
+            required_columns = [
+                "chr",
+                "startpos",
+                "endpos",
+                "logr",
+                "BAF",
+                "nA",
+                "nB"
+            ]
+            missing = [col for col in required_columns if col not in df.columns]
+            if missing:
+                raise ValueError(f"Missing columns in {fname}: {missing}")
+
+
+            self.batch_sample_add([sample_label], source_file=fname)
+            self.insert_sample_metadata(
+                {sample_label: {"modality": modality_enum.value}}
+            )
+
+            if modality_enum == Modalities.SCDNA:
+                self.copy_number_scdna_view.add([sample_label])
+            elif modality_enum == Modalities.LCM:
+                self.copy_number_lcm_view.add([sample_label])
+
+            sample_idx = self.global_idx[GlobalIndexName.SAMPLE.value][sample_label]
+
+            seg_labels = (
+                df[["chr", "startpos", "endpos"]]
+                .astype(str)
+                .agg(":".join, axis=1)
+                .tolist()
+            )
+
+            # add the copy number segments to the local index
+            self.batch_copy_numbers_scdna_add(seg_labels)
+
+            logr_dict = dict(zip(seg_labels, df["logr"]))
+
+            baf_dict = dict(zip(seg_labels, df["BAF"]))
+
+            logrs = np.array(
+                [logr_dict[segment] for segment in seg_labels], dtype="f8"
+            ).reshape(-1, 1)
+
+            bafs = np.array(
+                [baf_dict[segment] for segment in seg_labels], dtype="f8"
+            ).reshape(-1, 1)
+
+            profiles = np.empty(
+                (df.shape[0], 1), dtype=h5py.vlen_dtype(ALLELE_SPECIFIC_CN_DTYPE)
+            )
+            for i, row in df.iterrows():
+                nA = int(row["nA"])
+                nB = int(row["nB"])
+                total_cn = row["total_copy_number"]
+                # (Ensure total_cn is valid; the check above helps here)
+                profiles[i, 0] = np.array(
+                    [(nA, nB, 1.0)], dtype=ALLELE_SPECIFIC_CN_DTYPE
+                )
+
+            # add baf
+            table_name_base = f"{SchemaGroups.COPY_NUMBERS.value}/scdna"
+            seg_indices = self.indices_by_copy_numbers_scdna_label(seg_labels)
+            self._add_copy_number_profiles(
+                f"{table_name_base}/profile",
+                profiles,
+                seg_indices,
+                [sample_idx],
+                source_file=fname,
+            )
+
+            self._add_copy_number_raw(
+                f"{table_name_base}/logr",
+                logrs,
+                seg_indices,
+                [sample_idx],
+                source_file=fname,
+            )
+
+            self._add_copy_number_raw(
+                f"{table_name_base}/baf",
+                bafs,
+                seg_indices,
+                [sample_idx],
+                source_file=fname,
+            )
+
+        except Exception:
+            self.close()
+            raise
+
+
     def segment_lookup(self, locus, group_name):
         """
         Given a genomic locus, return the segment index for the specified group.

@@ -4,18 +4,18 @@ import numpy as np
 
 STR_DTYPE = h5py.string_dtype(encoding="utf-8")
 # datatype for metadata for SNV index
-SNV_DTYPE = np.dtype(
-    [
-        ("label", STR_DTYPE),
-        ("chrom", "S5"),  # Fixed-length string (5 characters max)
-        ("pos", "i8"),
-        ("end_pos", "i8"),  # Integer
-        ("ref_allele", "S1"),  # Single-character string
-        ("alt_allele", "S1"),  # Single-character string
-        ("hugo", "S15"),  # Fixed-length string (15 characters max)
-        ("gene", "S10"),  # Fixed-length string (10 characters ma)
-    ]
-)
+# SNV_DTYPE = np.dtype(
+#     [
+#         ("label", STR_DTYPE),
+#         ("chrom", "S5"),  # Fixed-length string (5 characters max)
+#         ("pos", "i8"),
+#         ("end_pos", "i8"),  # Integer
+#         ("ref_allele", "S1"),  # Single-character string
+#         ("alt_allele", "S1"),  # Single-character string
+#         ("hugo", "S15"),  # Fixed-length string (15 characters max)
+#         ("gene", "S10"),  # Fixed-length string (10 characters ma)
+#     ]
+# )
 
 # # datatype to store metadata for sample index
 # SAMPLE_DTYPE = np.dtype(

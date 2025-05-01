@@ -3,7 +3,6 @@ import h5py
 from .datatypes import (
     STR_DTYPE,
     LOG_DTYPE,
-    SNV_DTYPE,
     VLEN_EDGE_DTYPE,
     DATASET_LOG_DTYPE,
     TREE_DTYPE,
@@ -11,7 +10,12 @@ from .datatypes import (
     ALLELE_SPECIFIC_CN_DTYPE,
 )
 
-from .metadata import SAMPLE_DTYPE
+from .metadata import (
+    SAMPLE_DTYPE,
+    SNV_DTYPE,
+    SNP_DTYPE
+) 
+
 from .enums import GlobalIndexName, LocalIndexName, Modalities, TreeType, SchemaGroups
 
 MODALITIES = ["bulk", "lcm", "scdna"]
@@ -128,7 +132,7 @@ GLOBAL_INDEX = {
             "chunks": (100,),
         },
         "metadata": {
-            "dtype": SNV_DTYPE,
+            "dtype": SNP_DTYPE,
             "shape": (0,),
             "maxshape": (None,),
             "chunks": (100,),
@@ -232,6 +236,12 @@ SCHEMA = {
             "maxshape": (None, None),
             "chunks": (1, 5000),
         },
+        "genotype": {
+            "dtype": "S5",
+            "shape": (0, 0),
+            "maxshape": (None, None),
+            "chunks": (1, 5000),
+        }
     },
 }
 

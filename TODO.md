@@ -11,7 +11,7 @@
 - parse_battenberg_file
 <!-- - parse_pyclone -->
 - parse_vcf_file
-- parse ascat output
+<!-- - parse ascat output -->
 
 ## Data structure
 - add layer for lcm coordinates

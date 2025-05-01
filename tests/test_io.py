@@ -82,3 +82,37 @@ def test_add_read_counts(dnastream_obj, read_count_file):
 def test_add_sample_metadata(dnastream_obj, sample_metadata_file):
     dnastream_obj.load_metadata(sample_metadata_file, "sample", "sample_name")
     assert dnastream_obj.get_sample_size() > 0
+
+
+def test_add_ascatsc_as(dnastream_obj, ascat_as_file):
+    dnastream_obj.parse_ascat_sc_allele_specific_copy_numbers(
+        ascat_as_file, sample_label="my_test_sample"
+    )
+    assert (
+        dnastream_obj.get_snv_size() == 0
+    ), "No SNVs were added to the DNAStream object"
+    assert (
+        dnastream_obj.get_sample_size() == 1
+    ), "One sample should be added to the DNAStream object"
+    assert (
+        dnastream_obj.get_copy_numbers_scdna_size() > 0
+    ), "No segments were added to the copy_numbers_scdna local index!"
+
+    indices = dnastream_obj.indices_by_sample_label(["my_test_sample"])
+    assert len(indices) == 1, "One sample should be added to the DNAStream object"
+    assert indices[0] == 0, "Sample index should be 0"
+    sample_idx = indices[0]
+    seg_indices = dnastream_obj.indices_by_copy_numbers_scdna_label(
+        ["chr1:617509:158644993", "chr1:145365009:249387493"]
+    )
+    assert len(seg_indices) == 2, "Two segments should be added to the DNAStream object"
+    assert seg_indices[0] == 0, "Segment index should be 0"
+    assert (
+        dnastream_obj["copy_numbers/scdna/logr"][seg_indices[0], sample_idx]
+        == -0.985196208026304
+    ), "logr for 0,0 should be -0.98"
+    print(dnastream_obj["copy_numbers/scdna/baf"][seg_indices[0], sample_idx])
+    assert (
+        dnastream_obj["copy_numbers/scdna/baf"][seg_indices[0], sample_idx]
+        == 0.797
+    ), "baf for 0,0 should be 0.77"
