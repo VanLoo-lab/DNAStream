@@ -1356,26 +1356,32 @@ class DNAStream:
             for table in tables
         }
 
-    def load_metadata(self, fname, index_name, label_col):
+    def load_metadata(self, fname, index_name, label_col, delimiter=",", label_sep=":"):
         """
          Reads sample metadata from a CSV file, adds any new sample names to the index,
          and inserts metadata into the /sample/metadata table in the HDF5 file.
 
-         Parameters
+        Parameters
          ----------
         fname : str
              Path to the metadata CSV.
-         index_name : str
+        index_name : str
              Name of the index to be updated.
-         label_col : str
+        label_col : str | list of columns
              Column name in the CSV that contains the labels for the index.
+        delimiter : str, optional
+             Delimiter used in the metadata input file (default is ",").
+        label_sep : str, optional
+             Separator used to concatentate label column if label_col is a list (default is ":").
         """
         try:
             metadata_dict = {}
             with open(fname, newline="") as f:
-                reader = csv.DictReader(f)
+                reader = csv.DictReader(f, delimiter=delimiter)
+                if not isinstance(label_col, list):
+                    label_col = [label_col]
                 for row in reader:
-                    label = row[label_col]
+                    label = label_sep.join([row[col] for col in label_col])
                     metadata_dict[label] = {
                         k: v for k, v in row.items() if k != label_col
                     }
@@ -1640,19 +1646,10 @@ class DNAStream:
 
             df = pd.read_csv(fname, sep="\t")
 
-            required_columns = [
-                "chr",
-                "startpos",
-                "endpos",
-                "logr",
-                "BAF",
-                "nA",
-                "nB"
-            ]
+            required_columns = ["chr", "startpos", "endpos", "logr", "BAF", "nA", "nB"]
             missing = [col for col in required_columns if col not in df.columns]
             if missing:
                 raise ValueError(f"Missing columns in {fname}: {missing}")
-
 
             self.batch_sample_add([sample_label], source_file=fname)
             self.insert_sample_metadata(
@@ -1730,7 +1727,6 @@ class DNAStream:
         except Exception:
             self.close()
             raise
-
 
     def segment_lookup(self, locus, group_name):
         """

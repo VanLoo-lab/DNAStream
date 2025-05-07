@@ -31,3 +31,4 @@
 - fix docs for factory functions accessing GlobalIndex
 
 
+## Develop scripts for loading files into DNAStream object
