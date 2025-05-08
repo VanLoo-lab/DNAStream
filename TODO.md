@@ -1,5 +1,11 @@
 # TODO list
 
+## Debugging
+- Duplicate SNVs are being added to the index when files are loaded multiple times.  
+   The issue is that the _index_cache is not loaded, so duplicates are always added because the cache is not intialized from the stored metadata.
+   It turns out labels name were stored as bytes and the new labels were stored in unicode and therefore were registering as being in the label_cache or file.
+   The fix was to decode the stored labels from bytes to unicode when loading the index cache.
+
 ## Testing  
 <!-- - add test script for index_manager.py -->
 - test adding pseudobulk layers
@@ -8,19 +14,18 @@
 
 
 ## I/O Functions
-- parse_battenberg_file
+<!-- - parse_battenberg_file -->
 <!-- - parse_pyclone -->
 - parse_vcf_file
 <!-- - parse ascat output -->
 
 ## Data structure
 - add layer for lcm coordinates
-- store path to bam files for each sample
+<!-- - store path to bam files for each sample -->
 - fix metadata management
 <!-- - modify constants to use Enums in DNAStream -->
 
-## Table modification features
-- fix safe mode
+
 
 <!-- - map global indices to controlled datasets and have index changes trigger resizing of controlled tables -->
 

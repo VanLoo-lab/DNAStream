@@ -14,6 +14,7 @@ TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 def temp_h5_file():
     """Creates a temporary HDF5 file for testing and cleans up afterward."""
     filename = os.path.join(TEST_DATA_DIR, "test_temp.h5")
+    print(filename)
     yield filename  # Test function runs here
     if os.path.exists(filename):
         os.remove(filename)
@@ -111,3 +112,9 @@ def read_count_file():
 def sample_metadata_file():
     """Fixture to provide pyclone file for testing."""
     return os.path.join(TEST_DATA_DIR, "sample_metadata.csv")
+
+
+@pytest.fixture
+def maf_file():
+    """Provides the path to the maf file for testing."""
+    return os.path.join(TEST_DATA_DIR, "test.maf")

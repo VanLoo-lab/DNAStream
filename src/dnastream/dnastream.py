@@ -1381,9 +1381,10 @@ class DNAStream:
                 if not isinstance(label_col, list):
                     label_col = [label_col]
                 for row in reader:
+                    # print(f"Row type: {type(row)}; Keys: {row.keys() if isinstance(row, dict) else row}")
                     label = label_sep.join([row[col] for col in label_col])
                     metadata_dict[label] = {
-                        k: v for k, v in row.items() if k != label_col
+                        k: v for k, v in row.items() if k not in label_col
                     }
 
             if index_name not in self.global_idx:

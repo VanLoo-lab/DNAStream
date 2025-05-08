@@ -84,6 +84,12 @@ def test_add_sample_metadata(dnastream_obj, sample_metadata_file):
     assert dnastream_obj.get_sample_size() > 0
 
 
+def test_add_sample_metadata(dnastream_obj, sample_metadata_file):
+    dnastream_obj.load_metadata(sample_metadata_file, "sample",label_col ="sample_name" )
+    assert dnastream_obj.get_sample_size() > 0
+
+
+
 def test_add_ascatsc_as(dnastream_obj, ascat_as_file):
     dnastream_obj.parse_ascat_sc_allele_specific_copy_numbers(
         ascat_as_file, sample_label="my_test_sample"
@@ -116,3 +122,13 @@ def test_add_ascatsc_as(dnastream_obj, ascat_as_file):
         dnastream_obj["copy_numbers/scdna/baf"][seg_indices[0], sample_idx]
         == 0.797
     ), "baf for 0,0 should be 0.77"
+
+
+def test_add_snv_metadata(dnastream_obj, maf_file):
+    dnastream_obj.load_metadata( maf_file, "SNV", delimiter="\t", label_col=["Chromosome", "Start_Position", "Reference_Allele", "Tumor_Seq_Allele2"], label_sep=":")
+    m1 = dnastream_obj.get_snv_size()
+    assert m1 > 0
+
+    dnastream_obj.load_metadata( maf_file, "SNV", delimiter="\t", label_col=["Chromosome", "Start_Position", "Reference_Allele", "Tumor_Seq_Allele2"], label_sep=":")
+    m2 = dnastream_obj.get_snv_size()
+    assert m1 == m2
