@@ -17,6 +17,7 @@
 <!-- - parse_battenberg_file -->
 <!-- - parse_pyclone -->
 - parse_vcf_file
+- add column mappings for MAF and VCF files 
 <!-- - parse ascat output -->
 
 ## Data structure
@@ -31,9 +32,14 @@
 
 
 ## API/Readme
+- Add documentation for data structure to API
 - add example for adding SNV trees by edge lists 
 - add example for adding a global index (only allow new tables to be controlled for now.)
 - fix docs for factory functions accessing GlobalIndex
+
+## Indices 
+   - Behavior if an SNV appears in multiple MAF files.  Should there be a data table with SNV by sample that holds sample specific metadata 
+   such as base quality scores...
 
 
 ## Develop scripts for loading files into DNAStream object

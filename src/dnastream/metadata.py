@@ -5,7 +5,7 @@ from .datatypes import STR_DTYPE
 SAMPLE_DTYPE = np.dtype(
     [
         ("sample_name", "S100"),  #unique identifier for the sample
-        ("organism", "S40"),  #e.g. human, mouse
+        ("organism", "S40"),  #e.g. human, mouse  ?make default human?
         ("library_strategy", "S40"),  #e.g.  genomic
         ("library_source", "S40"),  #type of source material being sequenced e.g. DNA
         ("library_selection", "S40"),  #method used to select/enrich the library
@@ -17,7 +17,7 @@ SAMPLE_DTYPE = np.dtype(
         ("study", "S20"),
         ("coverage", "f4"),   #mean sequence coverage
         ("modality", "S10"),  #bulk, scdna, lcm
-        ("location", "S60"),  #short id of where sample originated e.g. LR_1
+        ("location", "S60"),  #short id of where sample originated e.g. LR_1   #analysis_id
         ("bam_file_path", h5py.special_dtype(vlen=str)),
         ("batch_id", "S40"),
         ("reference_build", "S20"),  #e.g. hg19, hg38
@@ -25,6 +25,9 @@ SAMPLE_DTYPE = np.dtype(
     ]
 )
 
+#adding sample by snv metadata table
+
+# CLINICAL_DTYPE 
 
 SNV_DTYPE = np.dtype([
     ("chrom", "S5"),
@@ -37,20 +40,23 @@ SNV_DTYPE = np.dtype([
     ("variant_classification", "S25"),
     ("variant_type", "S10"),
     ("dbsnp_id", "S20"),
-    ("strand", "S1"),
+    ("strand", "S1"),  #may not be in the maf file
     ("filter", "S20"),
-    ("context", "S10"),
+    ("context", "S10"),  #what was this?
     ("info", h5py.special_dtype(vlen=str)),
+    #("caller")   but could vary by sample
 ])
+
+#annotation
 
 
 SNP_DTYPE = np.dtype([
-    ("chromosome", "S10"),
+    ("chrom", "S10"),
     ("position", "i8"),
     ("ref_allele", "S10"),
     ("alt_allele", "S10"),
     ("dbsnp_id", "S20"),
-    ("strand", "S1"),
+    ("strand", "S1"),  # + or -
 ])
 
 

@@ -65,7 +65,7 @@ class BaseIndex:
 
         # Load index into memory for fast access
         self._labels_cache = [lab.decode("utf-8") if isinstance(lab, bytes) else lab for lab in self.labels[:]] # Convert NumPy array to list
-        print(f"SIZE OF LABELS CACHE: {len(self._labels_cache)}")
+        # print(f"SIZE OF LABELS CACHE: {len(self._labels_cache)}")
         self._index_cache = {lab: i for i, lab in enumerate(self._labels_cache)}
         self._metadata_cache = self.metadata[:]  # numpy array
 

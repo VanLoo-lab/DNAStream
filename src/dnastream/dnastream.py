@@ -586,10 +586,8 @@ class DNAStream:
         ----------
         fname : str
             Path to the input file containing read counts.
-        source : str
-            Sequencing modality source (e.g., "bulk", "lcm", "scdna").
-        location : str, optional
-            Additional sample location metadata for the samples.
+        columns: dict
+            Mapping of the column names to the expected columns ["snv", "sample", "alt", "total"]
 
         Raises
         ------
@@ -922,32 +920,32 @@ class DNAStream:
 
     def add_maf_file(
         self,
-        fname,
-        missing_values=[
-            "Unknown",
-            "Na",
-            "N/A",
-            "na",
-            "nan",
-            "NaN",
-            "NAN",
-            "NONE",
-            "None",
-            "",
-            "__UNKNOWN__",
-        ],
-        required_cols=[
-            "Hugo_Symbol",
-            "Chromosome",
-            "Start_Position",
-            "End_Position",
-            "Reference_Allele",
-            "Tumor_Seq_Allele2",
-            "Entrez_Gene_Id",
-        ],
+        fname
+        # missing_values=[
+        #     "Unknown",
+        #     "Na",
+        #     "N/A",
+        #     "na",
+        #     "nan",
+        #     "NaN",
+        #     "NAN",
+        #     "NONE",
+        #     "None",
+        #     "",
+        #     "__UNKNOWN__",
+        # ],
+        # required_cols=[
+        #     "Hugo_Symbol",
+        #     "Chromosome",
+        #     "Start_Position",
+        #     "End_Position",
+        #     "Reference_Allele",
+        #     "Tumor_Seq_Allele2",
+        #     "Entrez_Gene_Id",
+        # ],
     ):
         """
-        Add a single MAF (Mutation Annotation Format) file to the SNV index and updates the index log.
+        Add a single MAF (Mutation Annotation Format) file to the SNV index and associated metadata and updates the index log.
 
         This function reads a MAF file, extracts SNV-related information,
         and adds it to the HDF5 dataset. If missing values or required columns
@@ -977,20 +975,20 @@ class DNAStream:
         """
 
         # read MAF file and extract key info
-        maf = pd.read_table(fname, low_memory=False)
+        # maf = pd.read_table(fname, low_memory=False)
 
-        missing_cols = set(required_cols) - set(maf.columns)
+        # missing_cols = set(required_cols) - set(maf.columns)
 
-        maf.replace(missing_values, pd.NA, inplace=True)
-        if missing_cols:
-            maf = maf.reindex(
-                columns=maf.columns.tolist() + list(missing_cols), fill_value=pd.NA
-            )
+        # maf.replace(missing_values, pd.NA, inplace=True)
+        # if missing_cols:
+        #     maf = maf.reindex(
+        #         columns=maf.columns.tolist() + list(missing_cols), fill_value=pd.NA
+        #     )
 
-        maf["label"] = maf.iloc[:, :4].astype(str).agg(":".join, axis=1)
+        # maf["label"] = maf.iloc[:, :4].astype(str).agg(":".join, axis=1)
 
         column_dict = {
-            "label": "label",
+        #     "label": "label",
             "Chromosome": "chrom",
             "Start_Position": "pos",
             "End_Position": "end_pos",
@@ -1000,21 +998,24 @@ class DNAStream:
             "Entrez_Gene_Id": "gene",
         }
 
-        maf.rename(columns=column_dict, inplace=True)
+        # maf.rename(columns=column_dict, inplace=True)
 
-        snv_labels = maf["label"].tolist()
+        # snv_labels = maf["label"].tolist()
 
         try:
+            self.load_metadata(fname, index_name=GlobalIndexName.SNV.value,delimiter="\t",
+                                label_col=["chrom", "pos", "ref_allele", "alt_allele"], 
+                                label_sep=":", columns = column_dict)
 
-            snv_idx = self.batch_snv_add(snv_labels, source_file=fname)
+            # snv_idx = self.batch_snv_add(snv_labels, source_file=fname)
 
-            # sort dataframe according to the newly assigned indices in DNAStream
-            maf.loc[:, "snv_idx"] = maf["label"].map(snv_idx)
-            maf = maf.sort_values("snv_idx")
-            indices = maf["snv_idx"].tolist()
-            snv_data = maf[[val for _, val in column_dict.items()]]
+            # # sort dataframe according to the newly assigned indices in DNAStream
+            # maf.loc[:, "snv_idx"] = maf["label"].map(snv_idx)
+            # maf = maf.sort_values("snv_idx")
+            # indices = maf["snv_idx"].tolist()
+            # snv_data = maf[[val for _, val in column_dict.items()]]
 
-            self.add_snv_data(indices, snv_data, source_file=fname)
+            # self.add_snv_data(indices, snv_data, source_file=fname)
 
         except Exception:
 
@@ -1356,7 +1357,7 @@ class DNAStream:
             for table in tables
         }
 
-    def load_metadata(self, fname, index_name, label_col, delimiter=",", label_sep=":"):
+    def load_metadata(self, fname, index_name, label_col, delimiter=",", label_sep=":", columns = None):
         """
          Reads sample metadata from a CSV file, adds any new sample names to the index,
          and inserts metadata into the /sample/metadata table in the HDF5 file.
@@ -1372,14 +1373,19 @@ class DNAStream:
         delimiter : str, optional
              Delimiter used in the metadata input file (default is ",").
         label_sep : str, optional
-             Separator used to concatentate label column if label_col is a list (default is ":").
+            Separator used to concatentate label column if label_col is a list (default is ":").
+        columns : dict, optional
+            Mapping of column names in file to column names in metadata
         """
         try:
             metadata_dict = {}
+           
             with open(fname, newline="") as f:
                 reader = csv.DictReader(f, delimiter=delimiter)
                 if not isinstance(label_col, list):
                     label_col = [label_col]
+                if columns is not None:
+                    reader.fieldnames = [columns.get(col, col) for col in reader.fieldnames]
                 for row in reader:
                     # print(f"Row type: {type(row)}; Keys: {row.keys() if isinstance(row, dict) else row}")
                     label = label_sep.join([row[col] for col in label_col])
@@ -1406,6 +1412,8 @@ class DNAStream:
         ----------
         fname : str
             Path to the Battenberg file to parse.
+        sample_label : str
+            The sample label of the file
         """
         #  Column	Description
         # chr	The chromosome of the segment
@@ -1428,14 +1436,18 @@ class DNAStream:
             df = pd.read_csv(fname, sep="\t")
 
             self.batch_sample_add([sample_label], source_file=fname)
+         
 
             self.insert_sample_metadata(
                 {sample_label: {"modality": Modalities.BULK.value}}
             )
+            
+           
 
             self.copy_number_bulk_view.add([sample_label])
-            sample_idx = self.global_idx[GlobalIndexName.SAMPLE.value][sample_label]
 
+            sample_idx = self.global_idx[GlobalIndexName.SAMPLE.value][sample_label]
+           
             cn_labels = (
                 df[["chr", "startpos", "endpos"]]
                 .astype(str)
@@ -1444,8 +1456,11 @@ class DNAStream:
                 .tolist()
             )
 
+  
+
             # add the copy number segments to the local index
             self.batch_copy_numbers_bulk_add(cn_labels)
+     
 
             logr_dict = dict(zip(cn_labels, df["LogR"]))
             baf_dict = dict(zip(cn_labels, df["BAF"]))
@@ -1495,10 +1510,11 @@ class DNAStream:
             profiles = np.array(
                 profiles, dtype=h5py.vlen_dtype(ALLELE_SPECIFIC_CN_DTYPE)
             ).reshape(-1, 1)
-
+  
             # add baf
             table_name_base = f"{SchemaGroups.COPY_NUMBERS.value}/bulk"
             seg_indices = self.indices_by_copy_numbers_bulk_label(cn_labels)
+       
             self._add_copy_number_profiles(
                 f"{table_name_base}/profile",
                 profiles,
@@ -1506,6 +1522,7 @@ class DNAStream:
                 [sample_idx],
                 source_file=fname,
             )
+  
             self._add_copy_number_raw(
                 f"{table_name_base}/baf",
                 bafs,
@@ -1522,6 +1539,7 @@ class DNAStream:
             )
 
         except Exception:
+            print("there is an exception.")
             self.close()
             raise
 
@@ -1803,16 +1821,17 @@ class DNAStream:
 
         if dat.shape != (len(seg_indices), len(sample_indices)):
             raise ValueError(
-                f"Shape of `dat` {dat.shape} does not match seg_indices {len(seg_indices)} x sample_indices {len(sample_indices)}"
+                f"Shape of `data` {dat.shape} does not match seg_indices {len(seg_indices)} x sample_indices {len(sample_indices)}"
             )
 
+        print("we did it!")
         for i, seg in enumerate(seg_indices):
             for j, sample in enumerate(sample_indices):
 
                 self[table_name][seg, sample] = np.asarray(
                     dat[i, j], dtype=ALLELE_SPECIFIC_CN_DTYPE
                 )
-
+   
         self._log_dataset_modification(
             table_name, operation="update", source_file=source_file
         )
