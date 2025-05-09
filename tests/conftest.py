@@ -3,8 +3,8 @@ import pytest
 import h5py
 from dnastream import DNAStream
 from dnastream.index_manager import LocalIndex, GlobalIndex
-from dnastream.datatypes import STR_DTYPE
-from dnastream.metadata import SNV_DTYPE
+
+from dnastream.metadata import VariantMetadata
 
 # Define test data directory
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -43,7 +43,7 @@ def base_index(temp_h5_stream):
     yield LocalIndex(
         temp_h5_stream,
         name="index/SNV",
-        metadata_dtype=SNV_DTYPE,
+        metadata_dtype=VariantMetadata.get_dtype(),
         verbose=True,
         tracked_tables=[("read_counts", 0)],
     )
@@ -79,7 +79,7 @@ def global_index(temp_h5_stream):
     yield GlobalIndex(
         temp_h5_stream,
         name="index/SNV",
-        metadata_dtype=SNV_DTYPE,
+        metadata_dtype=VariantMetadata.get_dtype(),
         tracked_tables=[("read_counts", 0)],
         verbose=True,
     )

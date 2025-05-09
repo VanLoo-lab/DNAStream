@@ -10,9 +10,10 @@ theme:
 
 nav:
   - Home: index.md
-  - API Reference:
+  - API:
       - DNAStream: api/dnastream.md
       - IndexManager: api/indexmanager.md
+      - Metadata: api/metadata.md
 
 plugins:
   - search
@@ -23,4 +24,4 @@ plugins:
           paths: ["src"]
           options:
             docstring_style: numpy
-            show_source: false
+            show_source: true

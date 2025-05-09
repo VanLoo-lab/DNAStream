@@ -1,7 +1,7 @@
 # TODO list
 
 ## Debugging
-- Duplicate SNVs are being added to the index when files are loaded multiple times.  
+- FIXED (05/08/2025): Duplicate SNVs are being added to the index when files are loaded multiple times.  
    The issue is that the _index_cache is not loaded, so duplicates are always added because the cache is not intialized from the stored metadata.
    It turns out labels name were stored as bytes and the new labels were stored in unicode and therefore were registering as being in the label_cache or file.
    The fix was to decode the stored labels from bytes to unicode when loading the index cache.
@@ -17,7 +17,7 @@
 <!-- - parse_battenberg_file -->
 <!-- - parse_pyclone -->
 - parse_vcf_file
-- add column mappings for MAF and VCF files 
+- add column mappings for MAF 
 <!-- - parse ascat output -->
 
 ## Data structure

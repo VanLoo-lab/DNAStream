@@ -1,5 +1,3 @@
-import sys
-import os
 import csv
 import getpass
 import socket
@@ -920,29 +918,8 @@ class DNAStream:
 
     def add_maf_file(
         self,
-        fname
-        # missing_values=[
-        #     "Unknown",
-        #     "Na",
-        #     "N/A",
-        #     "na",
-        #     "nan",
-        #     "NaN",
-        #     "NAN",
-        #     "NONE",
-        #     "None",
-        #     "",
-        #     "__UNKNOWN__",
-        # ],
-        # required_cols=[
-        #     "Hugo_Symbol",
-        #     "Chromosome",
-        #     "Start_Position",
-        #     "End_Position",
-        #     "Reference_Allele",
-        #     "Tumor_Seq_Allele2",
-        #     "Entrez_Gene_Id",
-        # ],
+        fname,
+        columns = None
     ):
         """
         Add a single MAF (Mutation Annotation Format) file to the SNV index and associated metadata and updates the index log.
@@ -955,12 +932,9 @@ class DNAStream:
         ----------
         fname : str
             Path to the MAF file to be processed.
-        missing_values : list of str, optional
-            A list of strings that should be treated as missing values (default includes common NA representations).
-        required_cols : list of str, optional
-            A list of required column names that should be present in the MAF file
-            (default includes standard MAF mutation columns).
-
+        columns : dict
+            Mapping of fname column names to SNV metadata columns.
+ 
         Raises
         ------
         Exception
@@ -968,54 +942,34 @@ class DNAStream:
 
         Notes
         -----
-        - The function ensures that all required columns are present.
-        - Any missing columns are added with `pd.NA` values.
+        - Column names expected are GDC MAF Format v1.0.0.  If provided MAF files have a different format
+          then the `columns` argument should be used to map column names to DNAStream SNV metadata columns.
+          See documentation for SNV metadata columns.
         - SNV labels are created by concatenating the first four columns (chr:pos:ref:alt).
         - The extracted data is stored in the HDF5 file in a structured format.
         """
+        if columns:
+            column_dict = columns 
+        else:
+            column_dict = {
+                "Chromosome": "chrom",
+                "Start_Position": "pos",
+                "End_Position": "end_pos",
+                "Reference_Allele": "ref_allele",
+                "Tumor_Seq_Allele2": "alt_allele",
+                "Hugo_Symbol": "hugo",
+                "Entrez_Gene_Id": "gene",
+                "Filter" : "filter",
+                "Variant_Classification": "variant_classification",
+                "Variant_Type" : "variant_type",
+                "dbSNP_RS" : "dbsnp_id"
+            }
 
-        # read MAF file and extract key info
-        # maf = pd.read_table(fname, low_memory=False)
-
-        # missing_cols = set(required_cols) - set(maf.columns)
-
-        # maf.replace(missing_values, pd.NA, inplace=True)
-        # if missing_cols:
-        #     maf = maf.reindex(
-        #         columns=maf.columns.tolist() + list(missing_cols), fill_value=pd.NA
-        #     )
-
-        # maf["label"] = maf.iloc[:, :4].astype(str).agg(":".join, axis=1)
-
-        column_dict = {
-        #     "label": "label",
-            "Chromosome": "chrom",
-            "Start_Position": "pos",
-            "End_Position": "end_pos",
-            "Reference_Allele": "ref_allele",
-            "Tumor_Seq_Allele2": "alt_allele",
-            "Hugo_Symbol": "hugo",
-            "Entrez_Gene_Id": "gene",
-        }
-
-        # maf.rename(columns=column_dict, inplace=True)
-
-        # snv_labels = maf["label"].tolist()
-
+    
         try:
             self.load_metadata(fname, index_name=GlobalIndexName.SNV.value,delimiter="\t",
                                 label_col=["chrom", "pos", "ref_allele", "alt_allele"], 
                                 label_sep=":", columns = column_dict)
-
-            # snv_idx = self.batch_snv_add(snv_labels, source_file=fname)
-
-            # # sort dataframe according to the newly assigned indices in DNAStream
-            # maf.loc[:, "snv_idx"] = maf["label"].map(snv_idx)
-            # maf = maf.sort_values("snv_idx")
-            # indices = maf["snv_idx"].tolist()
-            # snv_data = maf[[val for _, val in column_dict.items()]]
-
-            # self.add_snv_data(indices, snv_data, source_file=fname)
 
         except Exception:
 

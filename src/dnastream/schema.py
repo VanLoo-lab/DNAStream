@@ -11,9 +11,8 @@ from .datatypes import (
 )
 
 from .metadata import (
-    SAMPLE_DTYPE,
-    SNV_DTYPE,
-    SNP_DTYPE
+    SampleMetadata,
+    VariantMetadata
 ) 
 
 from .enums import GlobalIndexName, LocalIndexName, Modalities, TreeType, SchemaGroups
@@ -77,7 +76,7 @@ GLOBAL_INDEX = {
             "chunks": (100,),
         },
         "metadata": {
-            "dtype": SNV_DTYPE,
+            "dtype": VariantMetadata.get_dtype(),
             "shape": (0,),
             "maxshape": (None,),
             "chunks": (100,),
@@ -100,7 +99,7 @@ GLOBAL_INDEX = {
             "chunks": (100,),
         },
         "metadata": {
-            "dtype": SAMPLE_DTYPE,
+            "dtype": SampleMetadata.get_dtype(),
             "shape": (0,),
             "maxshape": (None,),
             "chunks": (100,),
@@ -132,7 +131,7 @@ GLOBAL_INDEX = {
             "chunks": (100,),
         },
         "metadata": {
-            "dtype": SNP_DTYPE,
+            "dtype": VariantMetadata.get_dtype(),
             "shape": (0,),
             "maxshape": (None,),
             "chunks": (100,),
