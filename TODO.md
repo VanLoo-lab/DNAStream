@@ -1,10 +1,12 @@
 # TODO list
 
 ## Debugging
-- FIXED (05/08/2025): Duplicate SNVs are being added to the index when files are loaded multiple times.  
+- **FIXED** (05/08/2025): Duplicate SNVs are being added to the index when files are loaded multiple times.  
    The issue is that the _index_cache is not loaded, so duplicates are always added because the cache is not intialized from the stored metadata.
    It turns out labels name were stored as bytes and the new labels were stored in unicode and therefore were registering as being in the label_cache or file.
    The fix was to decode the stored labels from bytes to unicode when loading the index cache.
+- **FIXED** (05/09/2025) Need to track a conversion/mapping from the global index to the local view index.  View indices should not be resized is the label has already been added.  Need to create a cache for View and check if its in the cache before adding.
+
 
 ## Testing  
 <!-- - add test script for index_manager.py -->

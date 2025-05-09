@@ -13,6 +13,7 @@ def test_add_pyclone(dnastream_obj, pyclone_file):
 
 
 def test_add_battenberg(dnastream_obj, battenberg_file):
+  
     dnastream_obj.parse_battenberg_file(battenberg_file, "my_test_sample")
     assert (
         dnastream_obj.get_snv_size() == 0

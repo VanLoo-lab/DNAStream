@@ -65,6 +65,12 @@ COPY_NUMBER_LAYER_DICT = {
         "maxshape": (None, None),
         "chunks": (100, 100),
     },
+    "idx_view_mapping" :  {
+        "dtype": "i8",
+        "shape": (0,),
+        "maxshape": (None,),
+        "chunks": (100,),
+    }
 }
 
 GLOBAL_INDEX = {

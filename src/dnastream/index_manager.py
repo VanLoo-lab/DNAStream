@@ -595,33 +595,66 @@ class LocalIndex(BaseIndex):
 
 
 class DependentIndexView:
-    def __init__(self, global_index, tracked_tables, predicate_fn, file, verbose=False):
+    def __init__(self, global_index, tracked_tables,  predicate_fn, file, idx_view_mapping_table,verbose=False):
         self.global_index = global_index
         self.tracked_tables = tracked_tables  # list of (table_name, axis)
         self.predicate_fn = predicate_fn
         self.file = file
         self.verbose = verbose
+   
+        if idx_view_mapping_table in self.file:
+                self._local_to_global_idx = self.file[idx_view_mapping_table][:].tolist()
+         
+        else:
+            raise ValueError(f"Error! {idx_view_mapping_table} is not in datafile.")
+   
 
-    def add(self, labels):
-        """Add labels that match the predicate and resize only relevant tracked tables."""
+        self.labels = [self.global_index.idx_to_label(idx) for idx in self._local_to_global_idx]
+
+  
+    def label_to_view_idx(self,label):
+        return self.labels.index(label)
+
+    def label_to_global_idx(self, label):
+        return self.global_index.label_to_idx(label)
+    
+
+    def register(self, labels):
+        """Add labels that match the predicate and resize only relevant tracked tables.
+        DOES NOT ADD LABELS TO GLOBAL IDX!!!
+        """
         metadata = self.global_index.get_metadata(labels)
         filtered_labels = [
             l for l, row in zip(labels, metadata) if self.predicate_fn(row)
         ]
+
+  
+
+        for f in filtered_labels:
+            if f not in self.labels:
+
+                self.labels.append([f])
+                self._local_to_global_idx.append(self.label_to_global_idx(f))
+        
+
+        #save local
 
         if self.verbose:
             print(
                 f"#Filtering {len(filtered_labels)} matching labels for DependentIndexView..."
             )
 
+
         for table_name, axis in self.tracked_tables:
             if table_name not in self.file:
                 continue
             current_shape = self.file[table_name].shape
             if axis == 0:
+
                 new_shape = (current_shape[0] + len(filtered_labels), current_shape[1])
             else:
                 new_shape = (current_shape[0], current_shape[1] + len(filtered_labels))
-            self.file[table_name].resize(new_shape)
+            if current_shape != new_shape:
+                self.file[table_name].resize(new_shape)
 
-        return filtered_labels
+        return {f : self.label_to_global_idx(f) for f in filtered_labels}

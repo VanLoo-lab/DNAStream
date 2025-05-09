@@ -194,9 +194,11 @@ class DNAStream:
                 print(f"#Stream to connection {self.filename} already open...")
 
     def connect(self):
+
         self._connect()
 
         # create index objects and bound class methods
+       
         self._init_indices()
 
     def _init_indices(self):
@@ -228,7 +230,8 @@ class DNAStream:
             ],
             predicate_fn=is_lcm_sample,
             file=self.file,
-            verbose=self.verbose,
+            idx_view_mapping_table= "copy_numbers/lcm/idx_view_mapping",
+            verbose=self.verbose
         )
 
         def is_bulk_sample(meta):
@@ -243,9 +246,10 @@ class DNAStream:
             ],
             predicate_fn=is_bulk_sample,
             file=self.file,
-            verbose=self.verbose,
+            idx_view_mapping_table= "copy_numbers/bulk/idx_view_mapping",
+            verbose=self.verbose
         )
-
+    
         def is_scdna_sample(meta):
             return meta["modality"].lower() == b"scdna"
 
@@ -258,6 +262,7 @@ class DNAStream:
             ],
             predicate_fn=is_scdna_sample,
             file=self.file,
+            idx_view_mapping_table= "copy_numbers/scdna/idx_view_mapping",
             verbose=self.verbose,
         )
 
@@ -494,7 +499,7 @@ class DNAStream:
     def add_dataset_to_file(
         self,
         path,
-        dtype=h5py.string_dtype("utf-8"),
+        dtype,
         columns=[],
         source_file="",
         **kwargs,
@@ -1386,7 +1391,9 @@ class DNAStream:
         # SDfrac_A	Standard deviation on the BAF of SNPs in this segment, can be used as a measure of uncertainty
         # SDfrac_A_BS	Bootstrapped standard deviation
         # frac1_A_0.025	Associated 95% confidence interval of the bootstrap measure of uncertainty
+
         try:
+   
             df = pd.read_csv(fname, sep="\t")
 
             self.batch_sample_add([sample_label], source_file=fname)
@@ -1398,9 +1405,9 @@ class DNAStream:
             
            
 
-            self.copy_number_bulk_view.add([sample_label])
+            label_to_idx=  self.copy_number_bulk_view.register([sample_label])
 
-            sample_idx = self.global_idx[GlobalIndexName.SAMPLE.value][sample_label]
+            sample_idx = label_to_idx[sample_label]
            
             cn_labels = (
                 df[["chr", "startpos", "endpos"]]
@@ -1468,7 +1475,7 @@ class DNAStream:
             # add baf
             table_name_base = f"{SchemaGroups.COPY_NUMBERS.value}/bulk"
             seg_indices = self.indices_by_copy_numbers_bulk_label(cn_labels)
-       
+    
             self._add_copy_number_profiles(
                 f"{table_name_base}/profile",
                 profiles,
@@ -1539,11 +1546,11 @@ class DNAStream:
             )
 
             if modality_enum == Modalities.SCDNA:
-                self.copy_number_scdna_view.add([sample_label])
+                label_to_idx = self.copy_number_scdna_view.register([sample_label])
             elif modality_enum == Modalities.LCM:
-                self.copy_number_lcm_view.add([sample_label])
+                label_to_idx = self.copy_number_lcm_view.register([sample_label])
 
-            sample_idx = self.global_idx[GlobalIndexName.SAMPLE.value][sample_label]
+            sample_idx = label_to_idx[sample_label]
 
             seg_labels = (
                 df[["chromosome", "start", "end"]]
@@ -1630,11 +1637,11 @@ class DNAStream:
             )
 
             if modality_enum == Modalities.SCDNA:
-                self.copy_number_scdna_view.add([sample_label])
+                label_to_idx = self.copy_number_scdna_view.register([sample_label])
             elif modality_enum == Modalities.LCM:
-                self.copy_number_lcm_view.add([sample_label])
+                label_to_idx =self.copy_number_lcm_view.register([sample_label])
 
-            sample_idx = self.global_idx[GlobalIndexName.SAMPLE.value][sample_label]
+            sample_idx = label_to_idx[sample_label]
 
             seg_labels = (
                 df[["chr", "startpos", "endpos"]]
@@ -1778,13 +1785,19 @@ class DNAStream:
                 f"Shape of `data` {dat.shape} does not match seg_indices {len(seg_indices)} x sample_indices {len(sample_indices)}"
             )
 
-        print("we did it!")
+     
         for i, seg in enumerate(seg_indices):
             for j, sample in enumerate(sample_indices):
+                try:
+                    entry = dat[i, j]
+                    if entry.dtype != ALLELE_SPECIFIC_CN_DTYPE:
+                        entry = np.asarray(entry, dtype=ALLELE_SPECIFIC_CN_DTYPE)
+                    self[table_name][seg, sample] = entry
+                except Exception as e:
+                    print(f"Failed to write to ({seg}, {sample}) with entry: {entry}")
+                    print(f"Entry type: {type(entry)}, dtype: {getattr(entry, 'dtype', 'N/A')}")
+                    raise e
 
-                self[table_name][seg, sample] = np.asarray(
-                    dat[i, j], dtype=ALLELE_SPECIFIC_CN_DTYPE
-                )
    
         self._log_dataset_modification(
             table_name, operation="update", source_file=source_file

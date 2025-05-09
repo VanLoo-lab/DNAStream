@@ -54,7 +54,9 @@ def dnastream_obj(temp_h5_file):
     """Provides a DNAStream instance for testing."""
     ds = DNAStream(temp_h5_file, verbose=True)
     ds.initialize(patient="GEM2.1", sex="F", overwrite=True)
+
     ds.connect()
+
     yield ds
     ds.close()
     # ds.close()
