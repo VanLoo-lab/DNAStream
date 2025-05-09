@@ -6,7 +6,11 @@
    It turns out labels name were stored as bytes and the new labels were stored in unicode and therefore were registering as being in the label_cache or file.
    The fix was to decode the stored labels from bytes to unicode when loading the index cache.
 - **FIXED** (05/09/2025) Need to track a conversion/mapping from the global index to the local view index.  View indices should not be resized is the label has already been added.  Need to create a cache for View and check if its in the cache before adding.
+- **FIXED** (05/09/2025) Why are the DependentView tracked tables being resized if a duplicate sample is being added?  BECAUSE YOU DIDN"T SAVE self._local_to_global_idx.  Then you forgot to resize it before saving it to the file.  
 
+
+## Urgent
+- Double check that duplicates are added when the same label is given. Add overwrite parameter and do not add if overwrite is not given. Or do we want overwrite to be the default.
 
 ## Testing  
 <!-- - add test script for index_manager.py -->
