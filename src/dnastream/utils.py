@@ -1,3 +1,4 @@
+import os
 import pathlib
 import time
 import functools
@@ -24,4 +25,17 @@ def timeit(func):
         print(f"⏱ Function '{func.__name__}' took {elapsed_time:.4f} seconds")
         return result
 
+    return wrapper
+
+
+
+
+
+def require_file_exists(func):
+    """Decorator to ensure input file exists before calling the function."""
+    @functools.wraps(func)
+    def wrapper(self, fname, *args, **kwargs):
+        if not os.path.isfile(fname):
+            raise FileNotFoundError(f"File '{fname}' does not exist.")
+        return func(self, fname, *args, **kwargs)
     return wrapper

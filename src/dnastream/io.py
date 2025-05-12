@@ -19,6 +19,7 @@ from .datatypes import EDGE_LIST_DTYPE, ALLELE_SPECIFIC_CN_DTYPE
 
 from .utils import (
     wrap_list,
+    require_file_exists
 
 )
 
@@ -45,6 +46,9 @@ class IOMixin:
     The IOMixin is intended to be used as part of the DNAStream class, not standalone.
     """
 
+    # -----------------------------------
+    # Index and metadata I/O functions
+    # -----------------------------------
     def add_pyclone_clusters(self, source_file):
         """
         Parse a PyClone standard output file and extract the SNV cluster assignments.
@@ -97,10 +101,158 @@ class IOMixin:
         if self.verbose:
             print(f"#{len(cluster_dict)} SNV cluster assignments updated.")
 
+    def add_maf_files(self, fnames, **kwargs):
+        """
+        Add multiple MAF (Mutation Annotation Format) files to the SNV index and update the index log.
 
+        This method iterates over a list of MAF file paths and processes each file
+        using `add_maf_file`, updating the SNV index and data in the HDF5 dataset.
+
+        Parameters
+        ----------
+        fnames : list of str
+            A list of file paths to MAF files.
+        **kwargs : dict, optional
+            Additional keyword arguments to pass to `add_maf_file`.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        - This function loops through the list of files and calls `add_maf_file` for each.
+        - Handles missing values and ensures column consistency across files.
+        """
+        for f in fnames:
+            self.add_maf_file(f, **kwargs)
+
+    @require_file_exists
+    def add_maf_file(
+        self,
+        fname,
+        columns=None
+    ):
+        """
+        Add a single MAF (Mutation Annotation Format) file to the SNV index and associated metadata, and update the index log.
+
+        This function reads a MAF file, extracts SNV-related information,
+        and adds it to the HDF5 dataset. If missing values or required columns
+        are not present, they are handled accordingly.
+
+        Parameters
+        ----------
+        fname : str
+            Path to the MAF file to be processed.
+        columns : dict, optional
+            Mapping of file column names to SNV metadata columns.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        Exception
+            If an error occurs during processing, the HDF5 file is closed, and an exception is raised.
+
+        Notes
+        -----
+        - Column names expected are GDC MAF Format v1.0.0. If provided MAF files have a different format,
+          the `columns` argument should be used to map column names to DNAStream SNV metadata columns.
+        - SNV labels are created by concatenating the first four columns (chr:pos:ref:alt).
+        - The extracted data is stored in the HDF5 file in a structured format.
+        """
+        if columns:
+            column_dict = columns 
+        else:
+            column_dict = {
+                "Chromosome": "chrom",
+                "Start_Position": "pos",
+                "End_Position": "end_pos",
+                "Reference_Allele": "ref_allele",
+                "Tumor_Seq_Allele2": "alt_allele",
+                "Hugo_Symbol": "hugo",
+                "Entrez_Gene_Id": "gene",
+                "Filter" : "filter",
+                "Variant_Classification": "variant_classification",
+                "Variant_Type" : "variant_type",
+                "dbSNP_RS" : "dbsnp_id"
+            }
+
+    
+        try:
+            self.load_metadata(fname, index_name=GlobalIndexName.SNV.value,delimiter="\t",
+                                label_col=["chrom", "pos", "ref_allele", "alt_allele"], 
+                                label_sep=":", columns = column_dict)
+
+        except Exception:
+            raise
+    
+    @require_file_exists
+    def load_metadata(self, fname, index_name, label_col, delimiter=",", label_sep=":", columns=None):
+        """
+        Read sample metadata from a CSV file, add any new sample names to the index,
+        and insert metadata into the /sample/metadata table in the HDF5 file.
+
+        Parameters
+        ----------
+        fname : str
+            Path to the metadata CSV file.
+        index_name : str
+            Name of the index to be updated.
+        label_col : str or list of str
+            Column name(s) in the CSV that contain the labels for the index.
+        delimiter : str, optional
+            Delimiter used in the metadata input file (default is ",").
+        label_sep : str, optional
+            Separator used to concatenate label columns if label_col is a list (default is ":").
+        columns : dict, optional
+            Mapping of column names in file to column names in metadata.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If the index_name is not found in global_idx.
+        Exception
+            For other errors during file processing.
+        """
+        try:
+            metadata_dict = {}
+           
+            with open(fname, newline="") as f:
+                reader = csv.DictReader(f, delimiter=delimiter)
+                if not isinstance(label_col, list):
+                    label_col = [label_col]
+                if columns is not None:
+                    reader.fieldnames = [columns.get(col, col) for col in reader.fieldnames]
+                for row in reader:
+                    # print(f"Row type: {type(row)}; Keys: {row.keys() if isinstance(row, dict) else row}")
+                    label = label_sep.join([row[col] for col in label_col])
+                    metadata_dict[label] = {
+                        k: v for k, v in row.items() if k not in label_col
+                    }
+
+            if index_name not in self.global_idx:
+                raise ValueError(f"Index '{index_name}' not found in global_idx.")
+
+            self.global_idx[index_name].insert_metadata(metadata_dict)
+            table_name = f"{index_name}/metadata"
+            self._log_dataset_modification(table_name, "update", source_file=fname)
+
+        except Exception:
+            raise
+
+    # -----------------------------------
+    # Copy Number I/O Functions
+    # -----------------------------------
     def add_ascat_sc_copy_numbers_from_directory(
         self,
-        dir,
+        directory,
         file_regex="*.ASCAT.scprofile.txt",
         sample_label_regex=r".*(?=\.bam)",
         allele_specific=True,
@@ -111,7 +263,7 @@ class IOMixin:
 
         Parameters
         ----------
-        dir : str
+        directory : str
             Directory containing ASCAT SC files.
         file_regex : str, optional
             Glob-style pattern to select files (default: '*.ASCAT.scprofile.txt').
@@ -139,7 +291,7 @@ class IOMixin:
             ascat_sc_fn = self.add_ascat_sc_total_copy_numbers
 
         skipped_files = []
-        pattern = os.path.join(dir, file_regex)
+        pattern = os.path.join(directory, file_regex)
         file_list = glob.glob(pattern)
 
         for f in file_list:
@@ -278,6 +430,7 @@ class IOMixin:
         except Exception:
             raise
 
+    @require_file_exists
     def add_ascat_sc_allele_specific_copy_numbers(
         self, fname, sample_label, modality=Modalities.SCDNA.value, columns=None
     ):
@@ -404,228 +557,8 @@ class IOMixin:
         except Exception:
             raise
 
-    def add_read_counts(self, fname, columns=None):
-        """
-        Add variant and total read count data for SNVs from a file.
 
-        This method reads a file containing variant and total read counts, adds SNVs and samples to the index,
-        maps SNV and sample labels to indices, and updates the HDF5 dataset efficiently.
-
-        Parameters
-        ----------
-        fname : str
-            Path to the input file containing read counts.
-        columns : dict, optional
-            Mapping of the column names in the file to the expected columns ["snv", "sample", "alt", "total"].
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        ValueError
-            If required columns are missing.
-        Exception
-            If an error occurs during file processing.
-        """
-        try:
-            rc = pd.read_csv(fname)
-
-            if columns:
-                rc.rename(columns=columns, inplace=True)
-
-            for col in ["snv", "sample", "alt", "total"]:
-                if col not in rc.columns:
-                    raise ValueError(f"Column '{col}' not found in the input file.")
-
-            samples = rc["sample"].unique().tolist()
-
-            snvs = rc["snv"].unique().tolist()
-            self.batch_snv_add(snvs, source_file=fname)
-
-            self.batch_sample_add(samples, source_file=fname)
-
-            sample_indices_arr = np.array(
-                self.indices_by_sample_label(rc["sample"]), dtype=int
-            )
-            snv_indices_arr = np.array(self.indices_by_snv_label(rc["snv"]), dtype=int)
-
-
-            var_counts = rc["alt"].astype(int).to_numpy()
-            total_counts = rc["total"].astype(int).to_numpy()
-
-            # Update dataset in batch instead of looping
-            dat = self["read_counts"]
-            # unique_snv_indices = np.unique(snv_indices_arr)  # Get unique SNV indices
-
-            unique_snv_indices = np.unique(snv_indices_arr)  # Get unique SNV indices
-
-            for snv in unique_snv_indices:
-                mask = snv_indices_arr == snv
-                s_indices = sample_indices_arr[mask]
-                # Ensure that the sample indices (and corresponding values) are sorted
-                order = np.argsort(s_indices)
-                s_indices = s_indices[order]
-                var_vals = var_counts[mask][order]
-                tot_vals = total_counts[mask][order]
-
-                dat["variant"][snv, s_indices] = var_vals
-                dat["total"][snv, s_indices] = tot_vals
-
-       
-            for arr in ["variant", "total"]:
-                self._log_dataset_modification(
-                    f"read_counts/{arr}", operation="update", source_file=fname
-                )
-
-        except Exception:
-            raise
-
-    def add_maf_files(self, fnames, **kwargs):
-        """
-        Add multiple MAF (Mutation Annotation Format) files to the SNV index and update the index log.
-
-        This method iterates over a list of MAF file paths and processes each file
-        using `add_maf_file`, updating the SNV index and data in the HDF5 dataset.
-
-        Parameters
-        ----------
-        fnames : list of str
-            A list of file paths to MAF files.
-        **kwargs : dict, optional
-            Additional keyword arguments to pass to `add_maf_file`.
-
-        Returns
-        -------
-        None
-
-        Notes
-        -----
-        - This function loops through the list of files and calls `add_maf_file` for each.
-        - Handles missing values and ensures column consistency across files.
-        """
-        for f in fnames:
-            self.add_maf_file(f, **kwargs)
-
-    def add_maf_file(
-        self,
-        fname,
-        columns=None
-    ):
-        """
-        Add a single MAF (Mutation Annotation Format) file to the SNV index and associated metadata, and update the index log.
-
-        This function reads a MAF file, extracts SNV-related information,
-        and adds it to the HDF5 dataset. If missing values or required columns
-        are not present, they are handled accordingly.
-
-        Parameters
-        ----------
-        fname : str
-            Path to the MAF file to be processed.
-        columns : dict, optional
-            Mapping of file column names to SNV metadata columns.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        Exception
-            If an error occurs during processing, the HDF5 file is closed, and an exception is raised.
-
-        Notes
-        -----
-        - Column names expected are GDC MAF Format v1.0.0. If provided MAF files have a different format,
-          the `columns` argument should be used to map column names to DNAStream SNV metadata columns.
-        - SNV labels are created by concatenating the first four columns (chr:pos:ref:alt).
-        - The extracted data is stored in the HDF5 file in a structured format.
-        """
-        if columns:
-            column_dict = columns 
-        else:
-            column_dict = {
-                "Chromosome": "chrom",
-                "Start_Position": "pos",
-                "End_Position": "end_pos",
-                "Reference_Allele": "ref_allele",
-                "Tumor_Seq_Allele2": "alt_allele",
-                "Hugo_Symbol": "hugo",
-                "Entrez_Gene_Id": "gene",
-                "Filter" : "filter",
-                "Variant_Classification": "variant_classification",
-                "Variant_Type" : "variant_type",
-                "dbSNP_RS" : "dbsnp_id"
-            }
-
-    
-        try:
-            self.load_metadata(fname, index_name=GlobalIndexName.SNV.value,delimiter="\t",
-                                label_col=["chrom", "pos", "ref_allele", "alt_allele"], 
-                                label_sep=":", columns = column_dict)
-
-        except Exception:
-            raise
-    
-    def load_metadata(self, fname, index_name, label_col, delimiter=",", label_sep=":", columns=None):
-        """
-        Read sample metadata from a CSV file, add any new sample names to the index,
-        and insert metadata into the /sample/metadata table in the HDF5 file.
-
-        Parameters
-        ----------
-        fname : str
-            Path to the metadata CSV file.
-        index_name : str
-            Name of the index to be updated.
-        label_col : str or list of str
-            Column name(s) in the CSV that contain the labels for the index.
-        delimiter : str, optional
-            Delimiter used in the metadata input file (default is ",").
-        label_sep : str, optional
-            Separator used to concatenate label columns if label_col is a list (default is ":").
-        columns : dict, optional
-            Mapping of column names in file to column names in metadata.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        ValueError
-            If the index_name is not found in global_idx.
-        Exception
-            For other errors during file processing.
-        """
-        try:
-            metadata_dict = {}
-           
-            with open(fname, newline="") as f:
-                reader = csv.DictReader(f, delimiter=delimiter)
-                if not isinstance(label_col, list):
-                    label_col = [label_col]
-                if columns is not None:
-                    reader.fieldnames = [columns.get(col, col) for col in reader.fieldnames]
-                for row in reader:
-                    # print(f"Row type: {type(row)}; Keys: {row.keys() if isinstance(row, dict) else row}")
-                    label = label_sep.join([row[col] for col in label_col])
-                    metadata_dict[label] = {
-                        k: v for k, v in row.items() if k not in label_col
-                    }
-
-            if index_name not in self.global_idx:
-                raise ValueError(f"Index '{index_name}' not found in global_idx.")
-
-            self.global_idx[index_name].insert_metadata(metadata_dict)
-            table_name = f"{index_name}/metadata"
-            self._log_dataset_modification(table_name, "update", source_file=fname)
-
-        except Exception:
-            raise
-
+    @require_file_exists
     def add_battenberg_copy_numbers(self, fname, sample_label):
         """
         Parse a Battenberg file and extract the copy number data.
@@ -831,6 +764,9 @@ class IOMixin:
                     print(f"Entry type: {type(entry)}, dtype: {getattr(entry, 'dtype', 'N/A')}")
                     raise e
 
+    # -----------------------------------
+    # Tree I/O functions
+    # -----------------------------------
 
     @staticmethod
     def _parse_file(fname, sep_word="tree", nskip=0, sep="\t"):
@@ -941,6 +877,7 @@ class IOMixin:
         )
 
 
+    @require_file_exists
     def add_trees_from_file(self, fname, tree_type="SNV", method=""):
         """
         Add phylogenetic trees from a file to the HDF5 dataset.
@@ -1029,3 +966,85 @@ class IOMixin:
         self._log_dataset_modification(
             f"{SchemaGroups.TREES.value}/SNV_tree", operation="update"
         )
+
+    # -----------------------------------
+    # Read Count I/O functions
+    # -----------------------------------
+    @require_file_exists
+    def add_read_counts(self, fname, columns=None):
+        """
+        Add variant and total read count data for SNVs from a file.
+
+        This method reads a file containing variant and total read counts, adds SNVs and samples to the index,
+        maps SNV and sample labels to indices, and updates the HDF5 dataset efficiently.
+
+        Parameters
+        ----------
+        fname : str
+            Path to the input file containing read counts.
+        columns : dict, optional
+            Mapping of the column names in the file to the expected columns ["snv", "sample", "alt", "total"].
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If required columns are missing.
+        Exception
+            If an error occurs during file processing.
+        """
+        try:
+            rc = pd.read_csv(fname)
+
+            if columns:
+                rc.rename(columns=columns, inplace=True)
+
+            for col in ["snv", "sample", "alt", "total"]:
+                if col not in rc.columns:
+                    raise ValueError(f"Column '{col}' not found in the input file.")
+
+            samples = rc["sample"].unique().tolist()
+
+            snvs = rc["snv"].unique().tolist()
+            self.batch_snv_add(snvs, source_file=fname)
+
+            self.batch_sample_add(samples, source_file=fname)
+
+            sample_indices_arr = np.array(
+                self.indices_by_sample_label(rc["sample"]), dtype=int
+            )
+            snv_indices_arr = np.array(self.indices_by_snv_label(rc["snv"]), dtype=int)
+
+
+            var_counts = rc["alt"].astype(int).to_numpy()
+            total_counts = rc["total"].astype(int).to_numpy()
+
+            # Update dataset in batch instead of looping
+            dat = self["read_counts"]
+            # unique_snv_indices = np.unique(snv_indices_arr)  # Get unique SNV indices
+
+            unique_snv_indices = np.unique(snv_indices_arr)  # Get unique SNV indices
+
+            for snv in unique_snv_indices:
+                mask = snv_indices_arr == snv
+                s_indices = sample_indices_arr[mask]
+                # Ensure that the sample indices (and corresponding values) are sorted
+                order = np.argsort(s_indices)
+                s_indices = s_indices[order]
+                var_vals = var_counts[mask][order]
+                tot_vals = total_counts[mask][order]
+
+                dat["variant"][snv, s_indices] = var_vals
+                dat["total"][snv, s_indices] = tot_vals
+
+       
+            for arr in ["variant", "total"]:
+                self._log_dataset_modification(
+                    f"read_counts/{arr}", operation="update", source_file=fname
+                )
+
+        except Exception:
+            raise
