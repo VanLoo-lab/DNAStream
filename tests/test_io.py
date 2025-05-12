@@ -1,5 +1,5 @@
 def test_add_pyclone(dnastream_obj, pyclone_file):
-    dnastream_obj.parse_pyclone_file(pyclone_file)
+    dnastream_obj.add_pyclone_clusters(pyclone_file)
     assert (
         dnastream_obj.get_snv_size() > 0
     ), "No SNVs were added to the DNAStream object"
@@ -14,7 +14,7 @@ def test_add_pyclone(dnastream_obj, pyclone_file):
 
 def test_add_battenberg(dnastream_obj, battenberg_file):
   
-    dnastream_obj.parse_battenberg_file(battenberg_file, "my_test_sample")
+    dnastream_obj.add_battenberg_copy_numbers(battenberg_file, "my_test_sample")
     assert (
         dnastream_obj.get_snv_size() == 0
     ), "No SNVs were added to the DNAStream object"
@@ -41,7 +41,7 @@ def test_add_battenberg(dnastream_obj, battenberg_file):
 
 
 def test_add_ascatsc(dnastream_obj, ascat_total_file):
-    dnastream_obj.parse_ascat_sc_total_copy_numbers(
+    dnastream_obj.add_ascat_sc_total_copy_numbers(
         ascat_total_file, sample_label="my_test_sample"
     )
     assert (
@@ -92,7 +92,7 @@ def test_add_sample_metadata(dnastream_obj, sample_metadata_file):
 
 
 def test_add_ascatsc_as(dnastream_obj, ascat_as_file):
-    dnastream_obj.parse_ascat_sc_allele_specific_copy_numbers(
+    dnastream_obj.add_ascat_sc_allele_specific_copy_numbers(
         ascat_as_file, sample_label="my_test_sample"
     )
     assert (

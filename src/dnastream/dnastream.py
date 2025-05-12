@@ -1,3 +1,6 @@
+import os
+import glob
+import re
 import csv
 import getpass
 import socket
@@ -677,7 +680,6 @@ class DNAStream:
                 )
 
         except Exception:
-            self.close()
             raise
 
     def _add_read_count(self, snv_idx, sample_idx, var=0, total=0):
@@ -977,8 +979,6 @@ class DNAStream:
                                 label_sep=":", columns = column_dict)
 
         except Exception:
-
-            self.close()
             raise
 
     @staticmethod
@@ -1046,7 +1046,6 @@ class DNAStream:
         try:
             self._add_trees(tree_list, "SNV", scores, method)
         except Exception:
-            self.close()
             raise
 
     def _add_trees(self, tree_list, tree_type, scores, method="", source_file=""):
@@ -1196,7 +1195,6 @@ class DNAStream:
                 print(f"#{len(tree_list)} {tree_type} trees added from {method}.")
 
         except Exception:
-            self.close()
             raise
 
     def add_snv_tree_from_edge_list(
@@ -1360,10 +1358,9 @@ class DNAStream:
             self._log_dataset_modification(table_name, "update", source_file=fname)
 
         except Exception:
-            self.close()
             raise
 
-    def parse_battenberg_file(self, fname, sample_label):
+    def add_battenberg_copy_numbers(self, fname, sample_label):
         """
         Parse a Battenberg file and extract the copy number data.
 
@@ -1500,12 +1497,67 @@ class DNAStream:
             )
 
         except Exception:
-            print("there is an exception.")
-            self.close()
             raise
 
-    def parse_ascat_sc_total_copy_numbers(
-        self, fname, sample_label, modality=Modalities.SCDNA.value
+    def add_ascat_sc_copy_numbers_from_directory(
+        self,
+        dir,
+        file_regex="*.ASCAT.scprofile.txt",
+        sample_label_regex= r".*(?=\.bam)",
+        allele_specific=True,
+        modality=Modalities.SCDNA.value,
+    ):
+        """
+        Load ASCAT SC copy number files from a directory and extract sample labels from filenames.
+
+        Parameters
+        ----------
+        dir : str
+            Directory containing ASCAT SC files.
+        file_regex : str
+            Glob-style pattern to select files (e.g. '*ascat.txt').
+        sample_label_regex : str
+            Regular expression to extract sample label from filename.
+            The entire match (group 0) will be used as the label.
+        allele_specific : bool
+            Whether to load allele-specific copy numbers (default: True).
+        modality : str
+            Modality to assign to each sample (default: 'scdna').
+        """
+
+        if allele_specific:
+            ascat_sc_fn = self.add_ascat_sc_allele_specific_copy_numbers
+        else:
+            ascat_sc_fn = self.add_ascat_sc_total_copy_numbers
+
+        skipped_files = []
+        pattern = os.path.join(dir, file_regex)
+        file_list = glob.glob(pattern)
+
+        for f in file_list:
+            
+            basename = os.path.basename(f)
+            match = re.search(sample_label_regex, basename)
+            if not match:
+                if self.verbose:
+                    print(f"#Skipping {basename}: no match for regex '{sample_label_regex}'")
+                continue
+
+            sample_label = match.group(1) if match.lastindex else match.group(0)
+            if self.verbose:
+            
+                print(f"#Loading ASCAT SC file: {basename} → sample_label: {sample_label}")
+            try:
+                ascat_sc_fn(f, sample_label, modality=modality)
+            except Exception as e:
+                skipped_files.append(f)
+                if self.verbose:
+                    print(f"#Failed to load {f} due to error: {e}")
+        return skipped_files
+
+
+    def add_ascat_sc_total_copy_numbers(
+        self, fname, sample_label, modality=Modalities.SCDNA.value, columns =None
     ):
         """
         Parse an ASCAT SC total copy number file and extract the copy number data.
@@ -1518,6 +1570,8 @@ class DNAStream:
             Label for the sample being added.
         modality : str
             Modality of the sample (e.g., "scdna", "lcm"). Default is "scdna".
+        columns : dict 
+            Mapping of file column names to required column names (["chromosome", "start", "end", "logr", "total_copy_number"])
         """
 
         try:
@@ -1528,7 +1582,9 @@ class DNAStream:
                 raise ValueError(f"Modality '{modality}' not recognized.")
 
             df = pd.read_csv(fname, sep="\t")
-
+        
+            if columns is not None:
+                df= df.rename(columns=columns)
             required_columns = [
                 "chromosome",
                 "start",
@@ -1549,9 +1605,11 @@ class DNAStream:
                 label_to_idx = self.copy_number_scdna_view.register([sample_label])
             elif modality_enum == Modalities.LCM:
                 label_to_idx = self.copy_number_lcm_view.register([sample_label])
+ 
 
-            sample_idx = label_to_idx[sample_label]
-
+            sample_idx = self.copy_number_scdna_view.label_to_view_idx(sample_label)
+            print(sample_idx)
+   
             seg_labels = (
                 df[["chromosome", "start", "end"]]
                 .astype(str)
@@ -1563,7 +1621,7 @@ class DNAStream:
             self.batch_copy_numbers_scdna_add(seg_labels)
 
             logr_dict = dict(zip(seg_labels, df["logr"]))
-
+     
             logrs = np.array(
                 [logr_dict[segment] for segment in seg_labels], dtype="f8"
             ).reshape(-1, 1)
@@ -1579,6 +1637,7 @@ class DNAStream:
                 )
 
             # add baf
+    
             table_name_base = f"{SchemaGroups.COPY_NUMBERS.value}/scdna"
             seg_indices = self.indices_by_copy_numbers_scdna_label(seg_labels)
             self._add_copy_number_profiles(
@@ -1598,10 +1657,9 @@ class DNAStream:
             )
 
         except Exception:
-            self.close()
             raise
 
-    def parse_ascat_sc_allele_specific_copy_numbers(
+    def add_ascat_sc_allele_specific_copy_numbers(
         self, fname, sample_label, modality=Modalities.SCDNA.value
     ):
         """
@@ -1616,16 +1674,16 @@ class DNAStream:
         modality : str
             Modality of the sample (e.g., "scdna", "lcm"). Default is "scdna".
         """
-
+    
         try:
-
+       
             try:
                 modality_enum = Modalities(modality)
             except ValueError:
                 raise ValueError(f"Modality '{modality}' not recognized.")
 
             df = pd.read_csv(fname, sep="\t")
-
+            # print(df.head())
             required_columns = ["chr", "startpos", "endpos", "logr", "BAF", "nA", "nB"]
             missing = [col for col in required_columns if col not in df.columns]
             if missing:
@@ -1642,7 +1700,7 @@ class DNAStream:
                 label_to_idx =self.copy_number_lcm_view.register([sample_label])
 
             sample_idx = label_to_idx[sample_label]
-
+            print(sample_idx)
             seg_labels = (
                 df[["chr", "startpos", "endpos"]]
                 .astype(str)
@@ -1679,6 +1737,7 @@ class DNAStream:
 
             # add baf
             table_name_base = f"{SchemaGroups.COPY_NUMBERS.value}/scdna"
+            print("addding data")
             seg_indices = self.indices_by_copy_numbers_scdna_label(seg_labels)
             self._add_copy_number_profiles(
                 f"{table_name_base}/profile",
@@ -1705,7 +1764,6 @@ class DNAStream:
             )
 
         except Exception:
-            self.close()
             raise
 
     def segment_lookup(self, locus, group_name):
@@ -1803,7 +1861,7 @@ class DNAStream:
             table_name, operation="update", source_file=source_file
         )
 
-    def parse_pyclone_file(self, source_file):
+    def add_pyclone_clusters(self, source_file):
         """
         Parse a PyClone standard output file and extract the SNV cluster assignments.
         These will update the SNV global index cluster assignments.
@@ -1835,6 +1893,9 @@ class DNAStream:
         """
 
         # TODO: What do do about CCFs and cluster assignment probs?
+
+        if not self.in_context:
+            raise RuntimeError("DNAStream I/O functions must be used inside a context manager.")
         pyclone = pd.read_table(source_file, sep="\t")
 
         if self.verbose:

@@ -7,6 +7,7 @@
    The fix was to decode the stored labels from bytes to unicode when loading the index cache.
 - **FIXED** (05/09/2025) Need to track a conversion/mapping from the global index to the local view index.  View indices should not be resized is the label has already been added.  Need to create a cache for View and check if its in the cache before adding.
 - **FIXED** (05/09/2025) Why are the DependentView tracked tables being resized if a duplicate sample is being added?  BECAUSE YOU DIDN"T SAVE self._local_to_global_idx.  Then you forgot to resize it before saving it to the file.  
+- Index logs are not being properly updated.
 
 
 ## Urgent
