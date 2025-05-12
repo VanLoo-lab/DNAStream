@@ -15,7 +15,7 @@ from .index_manager import LocalIndex, GlobalIndex, DependentIndexView
 from .enums import GlobalIndexName, LocalIndexName, Modalities, TreeType, SchemaGroups
 
 
-from .datatypes import ALLELE_SPECIFIC_CN_DTYPE
+from .datatypes import EDGE_LIST_DTYPE, ALLELE_SPECIFIC_CN_DTYPE
 
 from .utils import (
     wrap_list,
@@ -152,9 +152,9 @@ class IOMixin:
                 continue
 
             sample_label = match.group(1) if match.lastindex else match.group(0)
-            if self.verbose:
+            # if self.verbose:
             
-                print(f"#Loading ASCAT SC file: {basename} → sample_label: {sample_label}")
+            #     print(f"#Loading ASCAT SC file: {basename} → sample_label: {sample_label}")
             try:
                 ascat_sc_fn(f, sample_label, modality=modality)
             except Exception as e:
@@ -227,7 +227,7 @@ class IOMixin:
 
 
             sample_idx = self.copy_number_scdna_view.label_to_view_idx(sample_label)
-            print(sample_idx)
+
 
             seg_labels = (
                 df[["chromosome", "start", "end"]]
@@ -279,7 +279,7 @@ class IOMixin:
             raise
 
     def add_ascat_sc_allele_specific_copy_numbers(
-        self, fname, sample_label, modality=Modalities.SCDNA.value
+        self, fname, sample_label, modality=Modalities.SCDNA.value, columns=None
     ):
         """
         Parse an ASCAT SC allele-specific copy number file and extract the copy number data.
@@ -292,6 +292,10 @@ class IOMixin:
             Label for the sample being added.
         modality : str, optional
             Modality of the sample (e.g., "scdna", "lcm"). Default is "scdna".
+        columns : dict, optional
+            Mapping of file column names to required column names (["chromosome", "start", "end", "logr", "total_copy_number"]).
+
+
 
         Returns
         -------
@@ -313,7 +317,11 @@ class IOMixin:
                 raise ValueError(f"Modality '{modality}' not recognized.")
 
             df = pd.read_csv(fname, sep="\t")
-            # print(df.head())
+
+            if columns is not None:
+                df= df.rename(columns=columns)
+            
+
             required_columns = ["chr", "startpos", "endpos", "logr", "BAF", "nA", "nB"]
             missing = [col for col in required_columns if col not in df.columns]
             if missing:
@@ -671,7 +679,7 @@ class IOMixin:
 
             label_to_idx=  self.copy_number_bulk_view.register([sample_label])
 
-            sample_idx = label_to_idx[sample_label]
+            sample_idx = self.copy_number_bulk_view.label_to_view_idx(sample_label)
            
             cn_labels = (
                 df[["chr", "startpos", "endpos"]]

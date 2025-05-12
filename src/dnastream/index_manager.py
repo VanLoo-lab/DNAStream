@@ -636,10 +636,10 @@ class DependentIndexView:
                 self.labels.append(f)
                 self._local_to_global_idx.append(self.label_to_global_idx(f))
         
-        if self.verbose:
-            print(
-                f"#Filtering {len(filtered_labels)} matching labels for DependentIndexView..."
-            )
+        # if self.verbose:
+        #     print(
+        #         f"#Filtering {len(filtered_labels)} matching labels for DependentIndexView..."
+        #     )
         if modified:
             ds = self.file[self.idx_view_mapping_table]
             if ds.shape[0] != len(self._local_to_global_idx):

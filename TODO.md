@@ -10,6 +10,7 @@
 - Index logs are not being properly updated.
 
 
+
 ## Urgent
 - Double check that duplicates are added when the same label is given. Add overwrite parameter and do not add if overwrite is not given. Or do we want overwrite to be the default.
 
