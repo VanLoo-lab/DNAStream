@@ -9,7 +9,7 @@ import h5py
 import numpy as np
 from enum import Enum
 
-#impot mixins
+# impot mixins
 from .io import IOMixin
 
 from .utils import (
@@ -32,11 +32,8 @@ from .schema import (
 )
 
 
-
-
-
-
 """
+DNAStream is opinionated about biology, but boringly consistent about access.
 /
  ├── SNV/                     # Shared SNV index
  │   ├── labels               # Short name chr:pos:ref:alt
@@ -88,9 +85,6 @@ from .schema import (
 """
 
 
-
-
-
 class DNAStream(IOMixin):
     """
     DNAStream is an HDF5-based data structure for efficient storage, indexing,
@@ -102,13 +96,12 @@ class DNAStream(IOMixin):
 
 
 
-    """ 
+    """
 
     def __init__(self, filename, verbose=False, id=None, sex=None, safe=True):
         """Initialize HDF5 storage."""
         self.filename = filename
         self.verbose = verbose
-        self.safe = safe
 
         self.global_idx = {}
         self.local_idx = {}
@@ -127,7 +120,7 @@ class DNAStream(IOMixin):
     def _connect(self, mode="a"):
         if not self.in_context:
             print(
-                "⚠️ Warning: You are connecting outside of a context manager. This is not recommended as runtime errors may corrupt the file."
+                "Warning: You are connecting outside of a context manager. This is not recommended as runtime errors may corrupt the file."
             )
         if not self._is_connected():
             self.file = h5py.File(
@@ -144,7 +137,7 @@ class DNAStream(IOMixin):
         self._connect()
 
         # create index objects and bound class methods
-       
+
         self._init_indices()
 
     def _init_indices(self):
@@ -176,8 +169,8 @@ class DNAStream(IOMixin):
             ],
             predicate_fn=is_lcm_sample,
             file=self.file,
-            idx_view_mapping_table= "copy_numbers/lcm/idx_view_mapping",
-            verbose=self.verbose
+            idx_view_mapping_table="copy_numbers/lcm/idx_view_mapping",
+            verbose=self.verbose,
         )
 
         def is_bulk_sample(meta):
@@ -192,10 +185,10 @@ class DNAStream(IOMixin):
             ],
             predicate_fn=is_bulk_sample,
             file=self.file,
-            idx_view_mapping_table= "copy_numbers/bulk/idx_view_mapping",
-            verbose=self.verbose
+            idx_view_mapping_table="copy_numbers/bulk/idx_view_mapping",
+            verbose=self.verbose,
         )
-    
+
         def is_scdna_sample(meta):
             return meta["modality"].lower() == b"scdna"
 
@@ -208,7 +201,7 @@ class DNAStream(IOMixin):
             ],
             predicate_fn=is_scdna_sample,
             file=self.file,
-            idx_view_mapping_table= "copy_numbers/scdna/idx_view_mapping",
+            idx_view_mapping_table="copy_numbers/scdna/idx_view_mapping",
             verbose=self.verbose,
         )
 
@@ -226,7 +219,7 @@ class DNAStream(IOMixin):
         else:
             self.set_patient_sex("")
         self._recursive_build(SCHEMA)
-        # self._init_indices()
+
         self.close()
 
     def __str__(self):
@@ -512,7 +505,6 @@ class DNAStream(IOMixin):
             source_file,
         )
 
-
     def get_dataset_log(self):
         """
         Retrieve the dataset log
@@ -565,9 +557,6 @@ class DNAStream(IOMixin):
 
         return df
 
-
-
-
     def _update_value(self, indices, dataset_name, col, value, source_file=""):
         """
         Internal method to update a single column in an HDF5 dataset.
@@ -613,7 +602,6 @@ class DNAStream(IOMixin):
             dataset_name, operation="update", source_file=source_file
         )
 
-    
     def _expand(self, table_list, n):
         """
         Expand the size of the tables in the HDF5 file.
@@ -630,8 +618,6 @@ class DNAStream(IOMixin):
             old_size = self[table].shape[0]
             new_size = old_size + n
             self[table].resize((new_size,))
-
-
 
     def _search_data_by_filename(self, dataset_name, fname):
         """
@@ -667,8 +653,6 @@ class DNAStream(IOMixin):
             return False
         else:
             return True
-
-
 
     def _extract_indices_by_column(self, dataset_name, name, values):
         vals = self[dataset_name][name][:]  # Load the column data
@@ -756,9 +740,6 @@ class DNAStream(IOMixin):
             for table in tables
         }
 
-
-
-   
     def segment_lookup(self, locus, group_name):
         """
         Given a genomic locus, return the segment index for the specified group.
@@ -789,8 +770,6 @@ class DNAStream(IOMixin):
                 if int(start) >= int(seg_start) and int(start) <= int(seg_end):
                     return label, idx
         return None, None
-
-    
 
     def initialize_pseudobulk_layer(self, sample_label, source_file=""):
         """
