@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 import h5py
 import json
 import warnings
+import pandas as pd
+import numpy as np
 
 
 class H5Dataset(ABC):
@@ -67,6 +69,8 @@ class H5Dataset(ABC):
         Construction does not create the dataset on disk. Use :meth:`create` to
         create it, and :meth:`open` to access it.
         """
+        if "/" in name or name == "":
+            raise ValueError("Dataset name must be a non-empty relative name (no '/').")
         self._parent = parent
         self._name = name
 
@@ -221,44 +225,67 @@ class H5Dataset(ABC):
             warnings.warn(msg)
 
     def create(
-        self, schema: dict, *, shape=(0,), maxshape=(None,), chunks=True
+        self,
+        schema: dict,
+        *,
+        shape=(0,),
+        maxshape=(None,),
+        compression="gzip",
+        compression_opts=4,
+        chunks=True,
+        **kwargs,
     ) -> h5py.Dataset:
-        """Create the dataset on disk and persist schema identity attributes.
+        """
+        Create the underlying HDF5 dataset under this object's parent group.
 
         Parameters
         ----------
         schema : dict
-            Compiled schema dictionary. Must include a ``dtype`` key (a NumPy dtype
-            suitable for an HDF5 dataset). If present, ``schema_version``,
-            ``schema_hash``, and ``schema_pairs`` are stored as HDF5 attributes.
-        shape : tuple, optional
-            Initial dataset shape (default is ``(0,)``).
-        maxshape : tuple, optional
-            Maximum dataset shape (default is ``(None,)``).
-        chunks : bool or tuple, optional
-            Chunking strategy passed to :meth:`h5py.Group.create_dataset`.
+            Compiled schema dict. Must include key "dtype".
+        shape : tuple[int, ...], default (0,)
+            Initial dataset shape.
+        maxshape : tuple[int | None, ...], default (None,)
+            Maximum shape for resizable datasets.
+        **kwargs
+            Forwarded to `h5py.Group.create_dataset`, e.g. `shuffle=True`, etc.
 
         Returns
         -------
         h5py.Dataset
-            The newly created dataset handle.
-
-        Raises
-        ------
-        RuntimeError
-            If the dataset already exists.
-        KeyError
-            If ``schema['dtype']`` is missing.
+            The created dataset.
         """
         if self.exists():
             raise RuntimeError(f"Refusing to create: {self.path} already exists.")
+
+        # Prevent callers from overriding core invariants
+        forbidden = {
+            "name",
+            "dtype",
+            "shape",
+            "maxshape",
+            "compression",
+            "compression_opts",
+            "chunks",
+        }
+        overlap = forbidden.intersection(kwargs)
+        if overlap:
+            raise TypeError(
+                f"Do not pass {sorted(overlap)} to create(); "
+                f"they are controlled by H5Dataset."
+            )
+
+        if "dtype" not in schema:
+            raise ValueError("schema must contain key 'dtype'")
 
         ds = self._parent.create_dataset(
             self._name,
             shape=shape,
             maxshape=maxshape,
             dtype=schema["dtype"],
+            compression=compression,
+            compression_opts=compression_opts,
             chunks=chunks,
+            **kwargs,
         )
 
         # Persist schema identity on disk
@@ -273,7 +300,6 @@ class H5Dataset(ABC):
             )
 
         ds.attrs["name"] = str(self._name)
-
         return ds
 
     @abstractmethod
@@ -298,3 +324,89 @@ class H5Dataset(ABC):
           document their accepted inputs.
         """
         ...
+
+    @abstractmethod
+    def validate(self, *args, **kwargs):
+        """Validates the contract of the subclass.
+
+        Subclasses must implement this method to define how new data are
+        validated, transformed, and appended to the underlying HDF5 dataset.
+
+        Returns
+        -------
+        Any
+            Implementation-defined. Common choices are ``None`` or an
+            :class:`h5py.Dataset` handle after appending.
+
+        Notes
+        -----
+        - Implementations should assume the dataset already exists (i.e.,
+          :meth:`create` has been called at least once).
+        - This base class does not prescribe the input format; concrete dataset
+          types (e.g., registries, measurements, provenance tables) should
+          document their accepted inputs.
+        """
+        ...
+
+    @staticmethod
+    def _to_dataframe(arr: np.ndarray) -> pd.DataFrame:
+        # Decode fixed-width byte string fields (dtype kind 'S') before constructing the DataFrame.
+        if isinstance(arr, np.ndarray) and arr.dtype.names is not None:
+            arr2 = arr.copy()
+            for name in arr2.dtype.names:
+                dt = arr2.dtype[name]
+                if dt.kind == "S":
+                    arr2[name] = np.char.decode(arr2[name], "utf-8")
+            return pd.DataFrame(arr2)
+
+        # Fallback for non-structured arrays
+        return pd.DataFrame(arr)
+
+    def get(
+        self, selector=None, *, by: str | None = None, mode: str = "active_only"
+    ) -> pd.DataFrame:
+        mode = self._validate_mode(mode)
+        ds = self._ds()
+
+        if selector is None:
+            # still avoid ds[:] if you want: implement to_dataframe(mode) similarly with on-disk mask
+            return self.to_dataframe(mode=mode)
+
+        if callable(selector):
+            # this path inherently needs a DataFrame of *something* to call the predicate on
+            # in the future consider to disallow callables for lazy mode
+            df = self.to_dataframe(mode=mode)
+            return df[selector(df)]
+
+        if by is None:
+            raise ValueError(
+                "Must pass by='label', by='id', or by='idx' when selector is not callable."
+            )
+
+        if by == "label":
+            idx = self.resolve_idx_from_labels(selector, mode=mode)
+        elif by == "id":
+            idx = self.resolve_idx_from_ids(selector, mode=mode)
+        elif by == "idx":
+            idx = np.asarray(selector)
+        else:
+            raise ValueError("by must be one of {'label','id','idx'}")
+
+        # normalize scalar -> 1D
+        idx = np.asarray(idx, dtype=object)
+        if idx.ndim == 0:
+            idx = np.array([idx], dtype=object)
+
+        # drop missing and convert to int
+        idx = idx[~pd.isna(idx)].astype(int)
+
+        order = np.argsort(idx)
+        idx_sorted = idx[order]
+
+        arr = ds[idx_sorted]
+        df = self._to_dataframe(arr)
+
+        # restore original requested order (optional but usually expected)
+        inv = np.empty_like(order)
+        inv[order] = np.arange(order.size)
+        return df.iloc[inv].reset_index(drop=True)
