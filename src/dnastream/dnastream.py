@@ -4,14 +4,17 @@ import getpass
 import socket
 from datetime import datetime, timezone
 import uuid
+from .registry import Registry
+from .schemas import SCHEMA_VERSION, REGISTRIES
+
+import logging
 
 
-SCHEMA_VERSION = "0.1.0"
 PACKAGE_VERSION = "0.1.0"
 
 
 class DNAStream:
-    def __init__(self, path, mode, patient=""):
+    def __init__(self, path, mode, verbose=False):
         """
         The core class for a DNAStream object.
 
@@ -23,8 +26,17 @@ class DNAStream:
         self.path = path
         self.mode = mode
         self._handle = None
-        self._connected = False
-        self.patient = patient
+
+        self._registries = {}
+        self.verbose = verbose
+
+        logging.basicConfig(
+            format="{asctime} - {levelname} - {message}",
+            style="{",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            level=logging.INFO,
+        )
+        self.logger = logging.getLogger()
 
     def __str__(self):
         if self._handle is None:
@@ -80,11 +92,8 @@ class DNAStream:
             raise FileNotFoundError(f"HDF5 file '{path}' does not exist.")
 
     def connect(self):
-        if (
-            self._handle is not None
-            and getattr(self._handle, "id", None) is not None
-            and self._handle.id.valid
-        ):
+
+        if self.is_connected():
             return
 
         if self.mode in ("r", "r+"):
@@ -96,6 +105,9 @@ class DNAStream:
             self._initialize_new_file()
         else:
             self._validate_header()
+
+        if self.verbose:
+            self.logger.info(f"streaming file {self.path}")
 
     @property
     def handle(self):
@@ -114,6 +126,13 @@ class DNAStream:
             finally:
                 self._handle = None
 
+    def is_connected(self) -> bool:
+        return (
+            self._handle is not None
+            and getattr(self._handle, "id", None) is not None
+            and self._handle.id.valid
+        )
+
     def __enter__(self):
         self.connect()
         return self
@@ -130,7 +149,7 @@ class DNAStream:
 
         # Required file-level attributes
         self.handle.attrs["dnastream_format"] = "DNAStream"
-        self.handle.attrs["schema_version"] = SCHEMA_VERSION
+        self.handle.attrs["schema_version"] = schema.SCHEMA_VERSION
         self.handle.attrs["created_by"] = getpass.getuser()
         self.handle.attrs["created_on_host"] = socket.gethostname()
         self.handle.attrs["created_at"] = (
@@ -139,12 +158,12 @@ class DNAStream:
 
         # Recommended
         self.handle.attrs["file_uuid"] = str(uuid.uuid4())
-        self.handle.attrs["dnastream_software_version"] = (
+        self.handle.attrs["software_version"] = (
             PACKAGE_VERSION  # or package __version__
         )
 
         # Domain
-        self.handle.attrs["patient_id"] = self.patient
+        self.handle.attrs["patient_id"] = ""
 
         # Reserved top-level groups
         for grp in (
@@ -161,6 +180,23 @@ class DNAStream:
         self.handle["provenance"].require_group("runs")
         self.handle["provenance"].require_group("changes")
 
+        self._create_registries()
+
+        # create built in registries
+
+    def set_patient_id(self, patient_id):
+        self.handle.attrs["patient_id"] = str(patient_id)
+
+    @property
+    def patient_id(self):
+        return self.handle.attrs["patient_id"]
+
+    def _create_registries(self):
+        for name, registry_schema in schema.REGISTRIES.items():
+            Registry(self.handle, name).create(
+                registry_schema, shape=(0,), maxshape=(None,)
+            )
+
     def _validate_header(self):
         """Validate that this is DNAStream file before modification or reading."""
         fmt = self.handle.attrs.get("dnastream_format", None)
@@ -172,3 +208,19 @@ class DNAStream:
             raise ValueError(
                 "DNAStream file missing required attribute 'schema_version'."
             )
+
+    def _handle_provider(self):
+        return self._handle if self._is_connected() else None
+
+    def registry(self, name: str) -> Registry:
+        if name not in self._registries:
+            self._registries[name] = Registry(self._handle_provider, name)
+        return self._registries[name]
+
+    @property
+    def sample_registry(self):
+        return self.registry("sample")
+
+    @property
+    def variant_registry(self):
+        return self.registry("variant")

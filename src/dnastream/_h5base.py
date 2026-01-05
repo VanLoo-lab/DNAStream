@@ -73,6 +73,7 @@ class H5Dataset(ABC):
             raise ValueError("Dataset name must be a non-empty relative name (no '/').")
         self._parent = parent
         self._name = name
+        self._validated = False
 
     def __str__(self) -> str:
         """Return a human-readable summary of the dataset."""
@@ -125,7 +126,7 @@ class H5Dataset(ABC):
             containing at least ``schema_version`` and ``schema_hash``. If provided,
             these values are compared against attributes stored on the dataset.
         strict : bool, optional
-            If True, schema mismatches raise ``ValueError``. If False, mismatches
+            If True, schema mismatches and validation errors (with validate=True) raise ``ValueError``. If False, mismatches
             emit a warning and the dataset is still returned.
 
         Returns
@@ -146,6 +147,18 @@ class H5Dataset(ABC):
             )
         if expected_schema is not None:
             self._validate_schema(expected_schema, strict)
+
+        if not self._validated:
+            # Validate subclass-specific invariants
+            try:
+                self.validate()
+
+            except Exception as e:
+                if strict:
+                    raise
+                warnings.warn(f"Validation failed for {self.path}: {e}", stacklevel=2)
+
+        self._validated = True
         return self._parent[self._name]
 
     def _ds(self) -> h5py.Dataset:

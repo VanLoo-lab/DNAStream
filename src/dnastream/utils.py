@@ -2,6 +2,8 @@ import os
 import pathlib
 import time
 import functools
+import numpy as np
+
 
 def wrap_list(val):
     if type(val) is list:
@@ -27,15 +29,22 @@ def timeit(func):
 
     return wrapper
 
+    # Helper: normalize label values (handle bytes coming from HDF5)
 
 
+def norm(x) -> str:
+    if isinstance(x, (bytes, np.bytes_)):
+        return x.decode("utf-8")
+    return str(x)
 
 
 def require_file_exists(func):
     """Decorator to ensure input file exists before calling the function."""
+
     @functools.wraps(func)
     def wrapper(self, fname, *args, **kwargs):
         if not os.path.isfile(fname):
             raise FileNotFoundError(f"File '{fname}' does not exist.")
         return func(self, fname, *args, **kwargs)
+
     return wrapper

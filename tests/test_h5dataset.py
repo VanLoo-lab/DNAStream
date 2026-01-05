@@ -48,7 +48,7 @@ def test_h5dataset_open_raises_on_schema_version_mismatch(
 ):
     """
     Given a handle to an h5 file and schema version mismatches are caught and
-    a ValueError is raised wehn strict is True.
+    a ValueError is raised when strict is True.
     """
     parent = temp_h5_handle.require_group("data")
     dt = _TestH5Dataset(parent, "my_data")
@@ -119,4 +119,29 @@ def test_h5dataset_create_refuses_if_exists(temp_h5_handle, temp_data_schema):
     dt.create(temp_data_schema)
 
     with pytest.raises(RuntimeError, match="already exists"):
+        dt.create(temp_data_schema)
+
+
+def test_h5dataset_create_refuses_dtype(temp_h5_handle, temp_data_schema):
+    """
+    Given an existing dataset with a stored schema identity,
+    when the kwargs contain dtype then create() throws a TypeError
+    """
+    parent = temp_h5_handle.require_group("data")
+    dt = _TestH5Dataset(parent, "my_data")
+    with pytest.raises(TypeError):
+        dt.create(temp_data_schema, dytpe="i4")
+
+
+def test_h5dataset_create_refuses_if_exists(temp_h5_handle, temp_data_schema):
+    """
+    Given an existing dataset with a stored schema identity,
+    when the passed schema does not contain a dtype
+    then create() throws a ValueError
+    """
+    parent = temp_h5_handle.require_group("data")
+    dt = _TestH5Dataset(parent, "my_data")
+    del temp_data_schema["dtype"]
+
+    with pytest.raises(ValueError):
         dt.create(temp_data_schema)
