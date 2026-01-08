@@ -7,6 +7,17 @@ import numpy as np
 import hashlib
 import json
 
+STR_DTYPE = h5py.string_dtype("utf-8")
+
+REGISTRY_SPINE = (
+    ("id", STR_DTYPE),  # UUIDv4 string
+    ("label", STR_DTYPE),  # user-facing unique key
+    ("idx", np.int64),
+    ("active", np.bool_),
+    ("created_at", STR_DTYPE),  # ISO8601 Z
+    ("created_by", STR_DTYPE),
+)
+
 
 @pytest.fixture
 def temp_h5_file(tmp_path):
@@ -42,9 +53,49 @@ def temp_data_schema():
         "schema_version": "1.0.1",
         "label_from": "variable",
         "label_normalizer": lambda x: x.lower() if isinstance(x, str) else "",
-        "label_required": False,
+        "label_required": True,
     }
     return temp_schema
+
+
+@pytest.fixture
+def temp_registry_schema():
+    temp_spec = REGISTRY_SPINE + (
+        ("variable", h5py.string_dtype("utf-8")),
+        ("value", np.int64),
+    )
+
+    payload = json.dumps(
+        [(k, str(v)) for k, v in temp_spec],
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    temp_reg_schema = {
+        "spec": temp_spec,
+        "dtype": np.dtype(list(temp_spec)),
+        "columns": [k for k, _ in temp_spec],
+        "schema_pairs": [(k, str(v)) for k, v in temp_spec],
+        "schema_hash": hashlib.sha256(payload).hexdigest(),
+        "schema_version": "1.0.1",
+        "label_from": ("variable",),
+        "label_normalizer": lambda x: x.lower() if isinstance(x, str) else "",
+        # "label_normalizer": lambda x: "",
+        "label_required": True,
+    }
+    return temp_reg_schema
+
+
+@pytest.fixture
+def temp_data_rows():
+    temp_data = [{"variable": f"var{i}", "value": i} for i in range(5)]
+    return temp_data
+
+
+@pytest.fixture
+def temp_registry(registry_obj, temp_data_schema):
+
+    return registry_obj.create(temp_data_schema)
 
 
 @pytest.fixture
@@ -59,8 +110,11 @@ def dnastream_obj(temp_h5_file):
 
 
 @pytest.fixture
-def registry_obj(temp_h5_handle):
-    reg = Registry(temp_h5_handle, "")
+def registry_obj(temp_h5_handle, temp_registry_schema):
+    grp = temp_h5_handle.require_group("registry")
+    reg = Registry(grp, "test")
+    reg.create(temp_registry_schema)
+    return reg
 
 
 # @pytest.fixture
