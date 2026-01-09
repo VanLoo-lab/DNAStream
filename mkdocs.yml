@@ -12,8 +12,8 @@ nav:
   - Home: index.md
   - API:
       - DNAStream: api/dnastream.md
-      - IndexManager: api/indexmanager.md
-      - Metadata: api/metadata.md
+      - Registry: api/indexmanager.md
+      - Schema: api/metadata.md
 
 plugins:
   - search

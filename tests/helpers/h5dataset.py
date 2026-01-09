@@ -8,3 +8,6 @@ class _TestH5Dataset(H5Dataset):
 
     def add(self, *args, **kwargs):
         raise NotImplementedError
+
+    def validate(self, *args, **kwargs):
+        pass

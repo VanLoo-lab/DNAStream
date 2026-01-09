@@ -1,3 +1,3 @@
-# Index Manager API reference
+# Registry API
 
-::: dnastream.index_manager
+::: dnastream.registry

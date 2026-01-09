@@ -241,6 +241,8 @@ class H5Dataset(ABC):
         self,
         schema: dict,
         *,
+        if_exists: str = "raise",
+        validate: bool = True,
         shape=(0,),
         maxshape=(None,),
         compression="gzip",
@@ -255,6 +257,10 @@ class H5Dataset(ABC):
         ----------
         schema : dict
             Compiled schema dict. Must include key "dtype".
+        if_exists : {"raise", "open"}, optional
+            the behavior if the dataset already exists
+        validation : bool, optional
+            if the dataset should be validated
         shape : tuple[int, ...], default (0,)
             Initial dataset shape.
         maxshape : tuple[int | None, ...], default (None,)
@@ -262,13 +268,38 @@ class H5Dataset(ABC):
         **kwargs
             Forwarded to `h5py.Group.create_dataset`, e.g. `shuffle=True`, etc.
 
+        Raises
+        ------
+        RuntimeError
+            If the dataset already exists and ``if_exists=raise``.
+        ValueError
+            If ``if_exists`` is invalid.
+
         Returns
         -------
         h5py.Dataset
             The created dataset.
         """
-        if self.exists():
-            raise RuntimeError(f"Refusing to create: {self.path} already exists.")
+        if if_exists in ["raise", "open"]:
+
+            if self.exists():
+                if if_exists == "raise":
+                    raise RuntimeError(
+                        f"Refusing to create: {self.path} already exists."
+                    )
+                else:
+                    if validate:
+                        self.validate()
+                    warnings.warn(
+                        f"Registry aleady exists at {self.path}, returning existing handle.",
+                        stacklevel=2,
+                    )
+                    return self.open()
+
+        else:
+            raise ValueError(
+                f"if_exists {if_exists} not valid, expected one of ['raise', 'open']"
+            )
 
         # Prevent callers from overriding core invariants
         forbidden = {
@@ -313,6 +344,9 @@ class H5Dataset(ABC):
             )
 
         ds.attrs["name"] = str(self._name)
+
+        if validate:
+            self.validate()
         return ds
 
     @abstractmethod

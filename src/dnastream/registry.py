@@ -14,14 +14,17 @@ import numpy as np
 import h5py
 import warnings
 from ._h5base import H5Dataset
-from .utils import norm
+from .utils import norm_key, as_str, as_str_vec
 import pandas as pd
+import collections.abc as cabc
 
 
 _VALID_MODES = {"active_only", "all", "non_active"}
 _BY_OPTIONS = {"label", "id"}
 _REGISTRY_SPINE = {"active", "id", "idx", "label", "created_at", "created_by"}
-_STR_TYPES = (str, bytes, np.bytes_, np.str_)
+_LABEL_SCALARS = (str, bytes, np.str_, np.bytes_)  # allow only label-ish things
+_ID_SCALARS = (str, bytes, np.str_, np.bytes_, uuid.UUID)
+_STRLIKE = (str, bytes, np.str_, np.bytes_)
 
 
 class Registry(H5Dataset):
@@ -108,8 +111,15 @@ class Registry(H5Dataset):
         """
         if item is None:
             return False
+
+        is_scalar, items = self._validate_id_selector(item)
+        if not is_scalar:
+            raise ValueError(f"Item {item} must be a scalar value.")
+
+        item = norm_key(as_str(items[0]))
+
         self._load_cache(cache_mode="all")
-        return norm(item) in self._id_to_idx
+        return item in self._id_to_idx
 
     # TODO: implement getitem method
     def __getitem__(self):
@@ -162,7 +172,7 @@ class Registry(H5Dataset):
         user = getpass.getuser()
 
         # Compute labels (or None) and find collisions against *active* existing rows
-        labels = self._label_normalizer(rows, schema)
+        labels = as_str_vec(self._label_normalizer(rows, schema))
 
         collisions: list[tuple[int, int]] = []
         if labels is not None:
@@ -173,20 +183,18 @@ class Registry(H5Dataset):
         block = np.zeros(n_add, dtype=ds.dtype)
 
         # Defaults
-        if "id" in names:
-            block["id"] = [str(uuid.uuid4()) for _ in range(n_add)]
-        if "label" in names:
-            if labels is None:
-                block["label"] = ""
-            else:
-                block["label"] = np.asarray(labels, dtype=object)
 
-        if "active" in names:
-            block["active"] = True
-        if "created_at" in names:
-            block["created_at"] = now
-        if "created_by" in names:
-            block["created_by"] = user
+        # Fill in registry spine iaw the registry contract
+        block["id"] = [str(uuid.uuid4()) for _ in range(n_add)]
+
+        if labels is None:
+            block["label"] = ""
+        else:
+            block["label"] = labels
+
+        block["active"] = True
+        block["created_at"] = now
+        block["created_by"] = user
 
         if "idx" in names:
             block["idx"] = np.arange(n0, n0 + n_add)
@@ -217,7 +225,7 @@ class Registry(H5Dataset):
 
         self._invalidate_cache()
 
-    def lookup_id(self, labels, *, mode="active_only", missing=np.nan) -> np.ndarray:
+    def resolve_id(self, labels, *, missing=np.nan) -> np.ndarray:
         """Resolve label(s) to id(s) in ``mode='active_only'``.
 
         Parameters
@@ -239,20 +247,20 @@ class Registry(H5Dataset):
         ValueError
             If `mode` is not ``"active_only"``.
         """
-        if mode != "active_only":
-            raise ValueError(
-                "Only mode='active_only' is allowed when resolving ids from labels. "
-                "Use find_id(...) for non-active lookups."
-            )
-        self._load_cache(cache_mode=mode)
+        # validate the input
+
+        is_scalar, sel = self._validate_label_selector(labels)
+
+        self._load_cache(cache_mode="active_only")
         return self._resolve_from_map(
-            labels,
+            sel,
             self._label_to_id,
             missing=missing,
-            key_norm=norm,
+            key_norm=norm_key,
+            is_scalar=is_scalar,
         )
 
-    def lookup_label(self, ids, *, mode="active_only", missing=np.nan) -> np.ndarray:
+    def resolve_label(self, ids, *, missing=np.nan) -> np.ndarray:
         """Resolve id(s) to label(s) under the given view mode.
 
         Parameters
@@ -269,12 +277,16 @@ class Registry(H5Dataset):
         numpy.ndarray
             Array of labels aligned to input order.
         """
-        self._load_cache(cache_mode=mode)
+
+        is_scalar, sel = self._validate_id_selector(ids)
+
+        self._load_cache(cache_mode="active_only")
         return self._resolve_from_map(
-            ids,
+            sel,
             self._id_to_label,
             missing=missing,
-            key_norm=norm,
+            key_norm=norm_key,
+            is_scalar=is_scalar,
         )
 
     def find_ids(self, labels, *, mode: str = "all") -> dict[str, np.ndarray]:
@@ -311,6 +323,8 @@ class Registry(H5Dataset):
         warn_missing : bool, optional
             If True, emit warnings for missing labels.
         """
+        _, labels = self._validate_label_selector(labels)
+
         self._activate(
             labels,
             by="label",
@@ -328,6 +342,7 @@ class Registry(H5Dataset):
         warn_missing : bool, optional
             If True, emit warnings for missing ids.
         """
+        _, ids = self._validate_id_selector(ids)
         self._activate(ids, by="id", warn_missing=warn_missing)
 
     def deactivate_labels(self, labels, *, warn_missing=True) -> None:
@@ -339,7 +354,14 @@ class Registry(H5Dataset):
             Label or iterable of labels.
         warn_missing : bool, optional
             If True, emit warnings for missing labels.
+
+        Notes
+        -----
+        Deactivates all entities that match the corresponding label, even in cases with multiple entries. For specific,
+        entities, it is recommended to use `deactivate_ids()`
+
         """
+        _, labels = self._validate_label_selector(labels)
         self._deactivate(labels, by="label", warn_missing=warn_missing)
 
     def deactivate_ids(self, ids, *, warn_missing=True) -> None:
@@ -352,6 +374,7 @@ class Registry(H5Dataset):
         warn_missing : bool, optional
             If True, emit warnings for missing ids.
         """
+        _, ids = self._validate_id_selector(ids)
         self._deactivate(ids, by="id", warn_missing=warn_missing)
 
     def to_dataframe(self, mode="all") -> pd.DataFrame:
@@ -434,7 +457,7 @@ class Registry(H5Dataset):
         ##### check ids #####
         if "id" not in missing_fields:
             ids = ds["id"][:]
-            norm_ids = [norm(x) for x in ids]
+            norm_ids = [norm_key(x) for x in ids]
             # check uniqueness
             if len(set(norm_ids)) != len(norm_ids):
                 errors.append("Duplicate ids found in registry.")
@@ -477,7 +500,7 @@ class Registry(H5Dataset):
             for i, (lab, ok) in enumerate(zip(labels, active)):
                 if not ok:
                     continue
-                key = norm(lab)
+                key = norm_key(lab)
                 if key in seen:
                     errors.append(
                         f"Duplicate active label '{key}' at rows {seen[key]} and {i}"
@@ -531,8 +554,6 @@ class Registry(H5Dataset):
         and may scan the dataset in history modes.
         """
         mode = self._validate_mode(mode)
-        by = self._validate_by(by)
-        ds = self._ds()
 
         if selector is None:
             return self.to_dataframe(mode=mode)
@@ -543,20 +564,26 @@ class Registry(H5Dataset):
             df = self.to_dataframe(mode=mode)
             return df[selector(df)]
 
-        if by is None:
+        if by is None or by not in {"id", "label", "idx"}:
             raise ValueError(
                 "Must pass by='label', by='id', or by='idx' when selector is not callable."
             )
 
         if by == "idx":
             idx = np.asarray(selector)
+            if idx.ndim == 0:
+                idx = np.array([idx], dtype=object)
         else:
-            idx = self._select_indices(selector=selector, by=by, mode=mode)
+            if by == "label":
+                is_scalar, sel = self._validate_label_selector(selector)
+
+            else:
+                is_scalar, sel = self._validate_id_selector(selector)
+
+            idx = self._select_indices(selector=sel, by=by, mode=mode)
 
         # normalize scalar -> 1D
         idx = np.asarray(idx, dtype=object)
-        if idx.ndim == 0:
-            idx = np.array([idx], dtype=object)
 
         # drop missing and convert to int
         idx = idx[~pd.isna(idx)].astype(int)
@@ -566,6 +593,7 @@ class Registry(H5Dataset):
         order = np.argsort(idx)
         idx_sorted = idx[order]
 
+        ds = self._ds()
         arr = ds[idx_sorted]  # <-- on-disk slice only
         df = self._to_dataframe(arr)
 
@@ -737,8 +765,8 @@ class Registry(H5Dataset):
         for lab, rid, idx, ok in zip(labels, ids, idxs, mask):
             if not ok:
                 continue
-            labn = norm(lab)
-            ridn = norm(rid)
+            labn = norm_key(lab)
+            ridn = norm_key(rid)
             if labn in label_to_idx:
                 if cache_mode == "active_only":
                     raise ValueError(
@@ -796,7 +824,7 @@ class Registry(H5Dataset):
             return
 
         # h5py: make scalar index work with fancy indexing
-        idx = self._normalize_selector(indices, scalar_types=(int, np.integer))
+        _, idx = self._normalize_selector(indices, scalar_types=(int, np.integer))
 
         # ensure indices are sorted
 
@@ -960,7 +988,7 @@ class Registry(H5Dataset):
         *,
         missing=np.nan,
         key_norm=None,
-        scalar_types=(str, bytes, np.bytes_, np.str_),
+        is_scalar=False,
     ):
         """Resolve one key or many keys using a mapping.
 
@@ -986,23 +1014,17 @@ class Registry(H5Dataset):
         -----
         This is a pure in-memory operation and does not touch HDF5.
         """
-        # handle numpy 0-d arrays as scalar
-        if isinstance(keys, np.ndarray) and keys.shape == ():
-            keys = keys.item()
-
-        is_scalar = isinstance(keys, scalar_types)
-        key_list = [keys] if is_scalar else list(keys)
 
         if mapping is None:
-            out = np.asarray([missing] * len(key_list), dtype=object)
+            out = np.asarray([missing] * len(keys), dtype=object)
             return out[0] if is_scalar else out
 
         if key_norm is None:
-            it = (mapping.get(k, missing) for k in key_list)
+            it = (mapping.get(k, missing) for k in keys)
         else:
-            it = (mapping.get(key_norm(k), missing) for k in key_list)
+            it = (mapping.get(key_norm(k), missing) for k in keys)
 
-        out = np.fromiter(it, dtype=object, count=len(key_list))
+        out = np.fromiter(it, dtype=object, count=len(keys))
         return out[0] if is_scalar else out
 
     def _select_indices(
@@ -1052,17 +1074,17 @@ class Registry(H5Dataset):
         mode = self._validate_mode(mode)
         by = self._validate_by(by)
 
+        if len(selector) == 0:
+            return np.asarray([], dtype=int)
+
         # Ensure caches exist for this view. Note: id->idx is valid in any mode.
         self._load_cache(cache_mode=mode)
-
-        sel_list = self._normalize_selector(selector, scalar_types=_STR_TYPES)
-        if len(sel_list) == 0:
-            return np.asarray([], dtype=int)
 
         def _warn_missing(missing_items) -> None:
             if not warn_missing:
                 return
             missing_items = list(missing_items)
+
             if len(missing_items) == 0:
                 return
             warnings.warn(
@@ -1073,14 +1095,14 @@ class Registry(H5Dataset):
         # ---- by == 'id' -------------------------------------------------
         if by == "id":
             idx = self._resolve_from_map(
-                sel_list,
+                selector,
                 self._id_to_idx,
                 missing=missing,
-                key_norm=norm,
+                key_norm=norm_key,
             )
             idx = np.asarray(idx, dtype=object)
             miss_mask = pd.isna(idx)
-            _warn_missing([req for req, m in zip(sel_list, miss_mask.tolist()) if m])
+            _warn_missing([req for req, m in zip(selector, miss_mask.tolist()) if m])
             out = idx[~miss_mask].astype(int)
             return np.unique(out)
 
@@ -1088,23 +1110,24 @@ class Registry(H5Dataset):
         # Fast path: active_only has unique label->idx cache
         if mode == "active_only":
             idx = self._resolve_from_map(
-                sel_list,
+                selector,
                 self._label_to_idx,
                 missing=missing,
-                key_norm=norm,
+                key_norm=norm_key,
             )
             idx = np.asarray(idx, dtype=object)
             miss_mask = pd.isna(idx)
-            _warn_missing([req for req, m in zip(sel_list, miss_mask.tolist()) if m])
+            _warn_missing([req for req, m in zip(selector, miss_mask.tolist()) if m])
             out = idx[~miss_mask].astype(int)
             return np.unique(out)
 
         # History modes: allow duplicates. Use scan-based find_rows.
-        want = [norm(x) for x in sel_list]
+        want = [norm_key(x) for x in selector]
+        print(want)
         hits = self._find_multiple(want, mode=mode, return_field="idx")
+        missing = [lab for lab, arr in hits.items() if arr is None or len(arr) == 0]
 
-        missing_labels = set(want) - set(hits.keys())
-        _warn_missing(sorted(missing_labels))
+        _warn_missing(sorted(missing))
 
         if allow_many:
             flat: list[int] = []
@@ -1191,7 +1214,7 @@ class Registry(H5Dataset):
         scalar_types = (str, bytes, np.bytes_, np.str_)
         is_scalar = isinstance(labels, scalar_types)
         label_list = [labels] if is_scalar else list(labels)
-        want = [norm(x) for x in label_list]
+        want = [norm_key(x) for x in label_list]
 
         # pre-seed outputs (so every requested label has an entry)
         out_lists: dict[str, list[object]] = {w: [] for w in want}
@@ -1214,14 +1237,14 @@ class Registry(H5Dataset):
             for lab, val, ok in zip(labs, vals, mask):
                 if not ok:
                     continue
-                key = norm(lab)
+                key = norm_key(lab)
                 if key in want_set:
-                    out_lists[key].append(norm(val))
+                    out_lists[key].append(norm_key(val))
         else:  # idx
             for lab, val, ok in zip(labs, vals, mask):
                 if not ok:
                     continue
-                key = norm(lab)
+                key = norm_key(lab)
                 if key in want_set:
                     out_lists[key].append(int(val))
 
@@ -1230,28 +1253,83 @@ class Registry(H5Dataset):
     @staticmethod
     def _normalize_selector(
         selector, scalar_types=(str, bytes, np.bytes_, np.str_)
-    ) -> list:
+    ) -> tuple[bool, list]:
         """Normalize a selector to a list.
 
-        Parameters
-        ----------
-        selector
-            Either a scalar (e.g., a label/id) or an iterable of selectors.
-        scalar_types : tuple[type, ...], optional
-            Types treated as scalar values.
-
-        Returns
-        -------
-        list
-            A list of selector values.
+        Returns (is_scalar, sel_list). Treat numpy 0-d arrays as scalars (unwrap).
+        Reject mappings (dict) because iterating them yields keys (usually a bug).
         """
-        if isinstance(selector, scalar_types) or (
-            isinstance(selector, np.ndarray) and selector.shape == ()
-        ):
-            sel_list = [selector]
-        else:
-            sel_list = list(selector)
-        return sel_list
+        # unwrap numpy 0-d arrays
+        if isinstance(selector, np.ndarray) and selector.shape == ():
+            selector = selector.item()
+
+        # reject mappings explicitly
+        if isinstance(selector, cabc.Mapping):
+            raise ValueError(
+                "Selector must be a scalar or an iterable of scalars; mappings (e.g., dict) are not supported."
+            )
+
+        # scalar path
+        if isinstance(selector, scalar_types):
+            return True, [selector]
+
+        # iterable path
+        try:
+            return False, list(selector)
+        except TypeError as e:
+            raise ValueError(
+                f"Selector must be a scalar or an iterable of scalars; got {type(selector).__name__}."
+            ) from e
+
+    @staticmethod
+    def _validate_selector_scalar_types(selector, *, allowed_scalar_types, what: str):
+        # allow numpy 0-d arrays but unwrap them
+        if isinstance(selector, np.ndarray) and selector.shape == ():
+            selector = selector.item()
+
+        # scalar path
+        if isinstance(selector, allowed_scalar_types):
+            return
+
+        # if it’s not one of the allowed scalar types, it might be an iterable;
+        # let _normalize_selector handle it later. BUT reject scalar-like non-iterables.
+        # (Also reject common “scalar but not allowed” immediately.)
+        if np.isscalar(selector):
+            raise ValueError(
+                f"{what} must be one of {allowed_scalar_types}; got {type(selector).__name__}."
+            )
+
+    @staticmethod
+    def _validate_selector_elements(seq, *, allowed_scalar_types, what: str):
+        for x in seq:
+            if isinstance(x, np.ndarray) and x.shape == ():
+                x = x.item()
+            if not isinstance(x, allowed_scalar_types):
+                raise ValueError(
+                    f"Each {what} must be one of {allowed_scalar_types}; got {type(x).__name__}."
+                )
+
+    def _validate_id_selector(self, selector) -> tuple[bool, list]:
+        self._validate_selector_scalar_types(
+            selector, allowed_scalar_types=_ID_SCALARS, what="id"
+        )
+        is_scalar, sel = self._normalize_selector(selector, scalar_types=_ID_SCALARS)
+        self._validate_selector_elements(
+            sel, allowed_scalar_types=_ID_SCALARS, what="id"
+        )
+
+        return is_scalar, sel
+
+    def _validate_label_selector(self, selector) -> tuple[bool, list]:
+        self._validate_selector_scalar_types(
+            selector, allowed_scalar_types=_LABEL_SCALARS, what="label"
+        )
+        is_scalar, sel = self._normalize_selector(selector, scalar_types=_LABEL_SCALARS)
+        self._validate_selector_elements(
+            sel, allowed_scalar_types=_LABEL_SCALARS, what="label"
+        )
+
+        return is_scalar, sel
 
     def _activate(
         self, selector, by, *, activate_newest: bool = True, warn_missing=True
@@ -1280,6 +1358,11 @@ class Registry(H5Dataset):
         - This mutates the on-disk `active` field and invalidates caches.
         """
         by = self._validate_by(by)
+
+        if by == "label":
+            _, selector = self._validate_label_selector(selector)
+        else:
+            _, selector = self._validate_id_selector(selector)
 
         activations = self._select_indices(
             selector,

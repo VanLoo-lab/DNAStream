@@ -1,9 +1,5 @@
-# Metadata API
+# Schema API
 
-## Sample Metadata
 
-::: dnastream.metadata.SampleMetadata
+::: dnastream.schema
 
-## SNV Metadata
-
-::: dnastream.metadata.VariantMetadata
