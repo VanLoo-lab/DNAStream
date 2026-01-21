@@ -55,6 +55,8 @@ REGISTRY_SPINE = (
     ("active", np.bool_),
     ("created_at", STR_DTYPE),  # ISO8601 Z
     ("created_by", STR_DTYPE),
+    ("modified_at", STR_DTYPE),  # ISO8601 Z
+    ("modified_by", STR_DTYPE),
 )
 
 SAMPLE_REGISTRY_DTYPE_SPEC = REGISTRY_SPINE + (

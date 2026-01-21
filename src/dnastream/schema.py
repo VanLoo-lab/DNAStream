@@ -1,288 +1,84 @@
-# Description: This file contains the schema for the DNAStream metadata model.
-import h5py
-from .datatypes import (
-    STR_DTYPE,
-    LOG_DTYPE,
-    VLEN_EDGE_DTYPE,
-    DATASET_LOG_DTYPE,
-    TREE_DTYPE,
-    SEGMENT_LABEL_DTYPE,
-    ALLELE_SPECIFIC_CN_DTYPE,
-)
-
-from .metadata import (
-    SampleMetadata,
-    VariantMetadata
-) 
-
-from .enums import GlobalIndexName, LocalIndexName, Modalities, TreeType, SchemaGroups
-
-MODALITIES = ["bulk", "lcm", "scdna"]
-
-STRUCT_ARRAYS = ["log", "metadata"]
-
-META_TABLES = ["metadata", "cluster"]
+from dataclasses import dataclass, field
+from typing import Callable, Any
+import json
+import hashlib
+import numpy as np
 
 
-INDEX_DICT = {
-    "dtype": STR_DTYPE,
-    "shape": (0,),
-    "maxshape": (None,),
-    "chunks": (100,),  # Chunking for efficient index expansion
-}
+@dataclass(frozen=True)
+class Field:
+    name: str
+    dtype: Any  # e.g. np.dtype("i4") or "U50"
+    required: bool = True
+    validator: Callable[[Any], None] | None = None  # raise on failure
 
 
-LOG_DICT = {
-    "dtype": LOG_DTYPE,
-    "shape": (0,),
-    "maxshape": (None,),
-    "chunks": (100,),  # Log entries will be added incrementally
-}
+@dataclass(frozen=True)
+class Schema:
+    fields: tuple[Field, ...]
+    version: str
+    dtype: np.dtype = field(init=False, repr=False)
+    label_from: tuple[str, ...] | None = None
+    label_required: bool = False
+    label_builder: Callable[[tuple[str, ...]], str] | None = None
+    label_normalizer: Callable[[str], str] | None = None
+    _field_by_name: dict[str, Field] = field(init=False, repr=False)
 
-LABEL_DICT = {
-    "dtype": STR_DTYPE,
-    "shape": (0,),
-    "maxshape": (None,),
-    "chunks": (100,),
-}
+    def __post_init__(self):
+        object.__setattr__(self, "dtype", np.dtype(list(self.get_spec())))
+        fb = {f.name: f for f in self.fields}
 
-COPY_NUMBER_LAYER_DICT = {
-    "profile": {
-        "dtype": h5py.vlen_dtype(ALLELE_SPECIFIC_CN_DTYPE),
-        "shape": (0, 0),
-        "maxshape": (None, None),
-        "chunks": (1, 100),  # Optimized for growing rows dynamically
-    },
-    "logr": {
-        "dtype": "f8",
-        "shape": (0, 0),
-        "maxshape": (None, None),
-        "chunks": (100, 100),
-    },
-    "baf": {
-        "dtype": "f8",
-        "shape": (0, 0),
-        "maxshape": (None, None),
-        "chunks": (100, 100),
-    },
-    "idx_view_mapping" :  {
-        "dtype": "i8",
-        "shape": (0,),
-        "maxshape": (None,),
-        "chunks": (100,),
-    }
-}
+        if len(fb) != len(self.fields):
+            raise ValueError("Duplicate field names in schema.")
+        object.__setattr__(self, "_field_by_name", fb)
 
-GLOBAL_INDEX = {
-    GlobalIndexName.SNV: {
-        "cluster": {
-            "dtype": "i8",
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "metadata": {
-            "dtype": VariantMetadata.get_dtype(),
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "labels": LABEL_DICT,
-        "log": LOG_DICT,
-        "tracked_tables": [("read_counts/variant", 0), ("read_counts/total", 0)],
-    },
-    GlobalIndexName.SAMPLE: {
-        "label": {
-            "dtype": STR_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "cluster": {
-            "dtype": "i8",
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "metadata": {
-            "dtype": SampleMetadata.get_dtype(),
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "labels": LABEL_DICT,
-        "log": LOG_DICT,
-        "tracked_tables": [
-            (f"{ctab}/{ctype}", 1)
-            for ctab in ["read_counts", "allele_counts"]
-            for ctype in ["variant", "total"]
-        ],
-        # + [
-        #     (f"copy_numbers/{s}/{ctab}", 1)
-        #     for ctab in ["profile", "logr", "baf"]
-        #     for s in MODALITIES
-        # ],
-    },
-    GlobalIndexName.SNP: {
-        "label": {
-            "dtype": STR_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "cluster": {
-            "dtype": "i8",
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "metadata": {
-            "dtype": VariantMetadata.get_dtype(),
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        },
-        "labels": LABEL_DICT,
-        "log": LOG_DICT,
-        "tracked_tables": [
-            ("allele_counts/variant", 0),
-            ("allele_counts/total", 0),
-        ],
-    },
-}
+    def field(self, name: str) -> Field:
+        try:
+            return self._field_by_name[name]
+        except KeyError:
+            raise KeyError(f"Field {name!r} not in schema.") from None
 
-LOCAL_INDEX = {
-    f"trees_{t}": {
-        "metadata": {
-            "dtype": TREE_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (50,),
-        },
-        "labels": LABEL_DICT,
-        "tracked_tables": [(f"trees/{t}", 0)],
-    }
-    for t in ["SNV", "CNA", "CLONAL"]
-}
+    def required_names(self) -> tuple[str, ...]:
+        return tuple(f.name for f in self.fields if f.required)
 
+    def make_label(self, row: dict[str, Any]) -> str:
+        """Build a label from `row` using `label_from`, `label_builder`, and `label_normalizer`.
 
-LOCAL_INDEX.update(
-    {
-        f"copy_numbers_{mod}": {
-            "metadata": {
-                "dtype": SEGMENT_LABEL_DTYPE,
-                "shape": (0,),
-                "maxshape": (None,),
-                "chunks": (100,),
-            },
-            "labels": LABEL_DICT,
-            "tracked_tables": [
-                (f"copy_numbers/{mod}/{tab}", 0) for tab in ["profile", "logr", "baf"]
-            ],
-        }
-        for mod in MODALITIES
-    }
-)
+        This is intended for Registry to call during add/update so callers don't need
+        to pass the schema each time.
+        """
+        if self.label_from is None:
+            raise ValueError("Schema.label_from is None; cannot build label")
 
-SCHEMA = {
-    "metadata": {
-        "log": {
-            "dtype": DATASET_LOG_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (100,),
-        }
-    },
-    SchemaGroups.TREES: {
-        TreeType.SNV: {
-            "dtype": VLEN_EDGE_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (50,),
-        },
-        TreeType.CNA: {
-            "dtype": STR_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (50,),
-        },
-        TreeType.CLONAL: {
-            "dtype": STR_DTYPE,
-            "shape": (0,),
-            "maxshape": (None,),
-            "chunks": (50,),
-        },
-    },
-    SchemaGroups.COPY_NUMBERS: {s: COPY_NUMBER_LAYER_DICT for s in Modalities},
-    SchemaGroups.READ_COUNTS: {
-        "variant": {
-            "dtype": "i",
-            "shape": (0, 0),
-            "maxshape": (None, None),
-            "chunks": (1, 5000),  # Optimized for row-wise updates
-        },
-        "total": {
-            "dtype": "i",
-            "shape": (0, 0),
-            "maxshape": (None, None),
-            "chunks": (1, 5000),
-        },
-    },
-    SchemaGroups.ALLELE_COUNTS: {
-        "variant": {
-            "dtype": "i",
-            "shape": (0, 0),
-            "maxshape": (None, None),
-            "chunks": (1, 5000),  # Optimized for row-wise updates
-        },
-        "total": {
-            "dtype": "i",
-            "shape": (0, 0),
-            "maxshape": (None, None),
-            "chunks": (1, 5000),
-        },
-        "genotype": {
-            "dtype": "S5",
-            "shape": (0, 0),
-            "maxshape": (None, None),
-            "chunks": (1, 5000),
-        }
-    },
-}
+        # Extract the requested fields and stringify.
+        parts = tuple(str(row[k]) for k in self.label_from)
 
-# # add tracking for local segment index along axis 0
-# for s in MODALITIES:
-#     SCHEMA["copy_numbers"][s]["tracked_tables"] = []
-#     for tab in ["profile", "logr", "baf"]:
-#         SCHEMA["copy_numbers"][s]["tracked_tables"].append(
-#             (f"copy_numbers/{s}/{tab}", 0)
-#         )
+        # Default builder if none provided.
+        builder = self.label_builder or (lambda xs: "|".join(xs))
+        label = builder(parts)
 
+        if self.label_normalizer is not None:
+            label = self.label_normalizer(label)
 
-def get_schema_value(path, key, default=None):
-    """
-    Retrieve a value from SCHEMA based on a given HDF5-like path.
+        return label
 
-    Parameters
-    ----------
-    path : str
-        The hierarchical path in the SCHEMA dictionary (e.g., "index/SNV").
-    key : str
-        The specific key to retrieve within the resolved SCHEMA dictionary.
-    default : any, optional
-        The default value to return if the key is not found (default is None).
+    def get_spec(self):
+        return tuple((field.name, field.dtype) for field in self.fields)
 
-    Returns
-    -------
-    any
-        The value associated with the key in SCHEMA, or the default if not found.
-    """
-    parts = path.split("/")
-    schema_section = SCHEMA
+    def get_names(self):
+        return tuple(field.name for field in self.fields)
 
-    for part in parts:
-        schema_section = schema_section.get(part, {})
-        if not isinstance(schema_section, dict):
-            return default  # Stop if we hit a non-dict value
+    def schema_pairs(self):
+        return [(k, str(v)) for k, v in self.get_spec()]
 
-    return schema_section.get(key, default)
+    def get_payload(self):
+        return json.dumps(
+            [(k, str(v)) for k, v in self.get_spec()], separators=(",", ":")
+        )
+
+    def json_pairs(self):
+        return self.get_payload()
+
+    def hash(self):
+        payload = self.get_payload().encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
