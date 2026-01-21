@@ -13,7 +13,7 @@ See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.githu
  - `numpy`
  - `pandas`
 
-
+<!-- 
 ## Schema (under development)
 The schema is currently underdevelopment is subject to change but below is the currently implemented or prospective design (*). 
 ```
@@ -67,4 +67,4 @@ The schema is currently underdevelopment is subject to change but below is the c
  │   ├── sample_info          # Sample metadata
  │   ├── processing_parameters # Processing parameters used in analysis
 
-```
+``` -->

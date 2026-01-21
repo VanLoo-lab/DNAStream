@@ -2,9 +2,9 @@
 # Registry Contract
 
 ## Location
-- All registries are stored under the HDF5 group **`/registry`**.
-- Each registry dataset lives at the path: `/registry/<name>
-This ensures registries are centrally located and discoverable.
+- All registries are stored under the HDF5 group **`/registry`** to ensure they are centrally located and discoverable.
+- Each registry dataset lives at the path: `/registry/<name>`
+
 
 ---
 
@@ -15,8 +15,10 @@ This ensures registries are centrally located and discoverable.
 - `label`
 - `idx`
 - `active`
-- `created_on`
+- `created_at`
 - `created_by`
+- `modified_at`
+- `modified_by`
 - The schema **must** define how labels are generated and validated:
 - `label_from`: tuple of field names used to construct the label
 - `label_normalizer`: callable that produces a normalized label
@@ -31,7 +33,10 @@ This ensures registries are centrally located and discoverable.
 - Registries are **append-only**:
 - Rows may never be deleted
 - Rows may never be reordered
-- Existing rows may only be modified via state or metadata fields (e.g., `active`).
+- Existing rows may only be modified via state or metadata fields (e.g., `active`). 
+    - Editable metadata fields are any fields that are not in the Registry spine (see above) and not in the `label_from` tuple
+    - Any metadata edits will reset the `modified_at` and `modified_by` fields
+
 
 ---
 

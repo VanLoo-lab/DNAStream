@@ -10,10 +10,17 @@ theme:
 
 nav:
   - Home: index.md
+  - Design: 
+    - Charter: design/CHARTER.md
+    - Model: design/MODEL.md
+    - Specifications: design/SPECS.md
+    - Invariants: design/INVARIANTS.md
+    - Registry: design/REGISTRY.md
   - API:
-      - DNAStream: api/dnastream.md
+      # - DNAStream: api/dnastream.md
       - Registry: api/indexmanager.md
-      - Schema: api/metadata.md
+      # - Schema: api/metadata.md
+
 
 plugins:
   - search
