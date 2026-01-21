@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 import h5py
-import json
 import warnings
 import pandas as pd
 import numpy as np
+from .schema import Schema
+from .utils import as_str
 
 
 class H5Dataset(ABC):
@@ -75,6 +76,8 @@ class H5Dataset(ABC):
         self._name = name
         self._validated = False
 
+        self._schema = None
+
     def __str__(self) -> str:
         """Return a human-readable summary of the dataset."""
         if not self.exists():
@@ -98,6 +101,10 @@ class H5Dataset(ABC):
         return self._name
 
     @property
+    def schema(self) -> Schema | None:
+        return self._schema
+
+    @property
     def path(self) -> str:
         """str: Absolute HDF5 path to the dataset."""
         return f"{self._parent.name}/{self._name}"
@@ -113,18 +120,17 @@ class H5Dataset(ABC):
         return self._name in self._parent
 
     def open(
-        self, expected_schema: dict | None = None, *, strict: bool = True
+        self, schema: Schema | None = None, *, strict: bool = True
     ) -> h5py.Dataset:
         """Open the underlying HDF5 dataset.
 
-        Optionally validates schema identity against metadata stored on disk.
+        Validates schema identity against metadata stored on disk.
 
         Parameters
         ----------
-        expected_schema : dict or None, optional
-            Compiled schema dictionary (e.g., from ``dnastream.schemas.compile_schema``)
-            containing at least ``schema_version`` and ``schema_hash``. If provided,
-            these values are compared against attributes stored on the dataset.
+        schema : dnastream.Schema or None, optional
+            Schema used to validate schema identity. If None, uses the cached schema
+            from the last successful `create()` or `open()`.
         strict : bool, optional
             If True, schema mismatches and validation errors (with validate=True) raise ``ValueError``. If False, mismatches
             emit a warning and the dataset is still returned.
@@ -141,18 +147,29 @@ class H5Dataset(ABC):
         ValueError
             If schema validation fails and ``strict=True``.
         """
+
+        if schema is None:
+            if self._schema is None:
+                raise ValueError(
+                    f"No cached schema for '{self.name}'. Pass a Schema to open(), or call create(schema=...)."
+                )
+            schema = self._schema
+
+        if not isinstance(schema, Schema):
+            raise ValueError("schema must be of type 'dnastream.Schema'")
         if not self.exists():
             raise RuntimeError(
                 f"Dataset does not exist at {self.path}. Cannot be opened!"
             )
-        if expected_schema is not None:
-            self._validate_schema(expected_schema, strict)
+
+        self._validate_schema(schema, strict)
+        # Cache schema for downstream calls (e.g., add/update can call open() with schema=None).
+        self._schema = schema
 
         if not self._validated:
             # Validate subclass-specific invariants
             try:
                 self.validate()
-
             except Exception as e:
                 if strict:
                     raise
@@ -176,13 +193,13 @@ class H5Dataset(ABC):
         """
         return self._parent[self._name]
 
-    def _validate_schema(self, expected_schema: dict, strict: bool) -> None:
+    def _validate_schema(self, expected_schema: Schema, strict: bool) -> None:
         """Validate dataset schema identity against an expected schema.
 
         Parameters
         ----------
-        expected_schema : dict
-            Expected schema dictionary containing ``schema_version`` and
+        expected_schema : Schema
+            Expected schema containing ``schema_version`` and
             ``schema_hash`` keys.
         strict : bool
             If True, mismatches raise ``ValueError``. If False, mismatches emit a
@@ -197,19 +214,11 @@ class H5Dataset(ABC):
         ds_schema_version = ds.attrs.get("schema_version", None)
         ds_schema_hash = ds.attrs.get("schema_hash", None)
 
-        ds_schema_version = (
-            None if ds_schema_version is None else str(ds_schema_version)
-        )
-        ds_schema_hash = None if ds_schema_hash is None else str(ds_schema_hash)
+        ds_schema_version = as_str(ds_schema_version)
+        ds_schema_hash = as_str(ds_schema_hash)
 
-        expected_schema_version = expected_schema.get("schema_version", None)
-        expected_schema_version = (
-            None if expected_schema_version is None else str(expected_schema_version)
-        )
-        expected_schema_hash = expected_schema.get("schema_hash", None)
-        expected_schema_hash = (
-            None if expected_schema_hash is None else str(expected_schema_hash)
-        )
+        expected_schema_version = as_str(expected_schema.version)
+        expected_schema_hash = as_str(expected_schema.hash())
 
         problems: list[str] = []
 
@@ -239,7 +248,7 @@ class H5Dataset(ABC):
 
     def create(
         self,
-        schema: dict,
+        schema: Schema,
         *,
         if_exists: str = "raise",
         validate: bool = True,
@@ -255,8 +264,8 @@ class H5Dataset(ABC):
 
         Parameters
         ----------
-        schema : dict
-            Compiled schema dict. Must include key "dtype".
+        schema : Schema
+            dnastream.Schema object
         if_exists : {"raise", "open"}, optional
             the behavior if the dataset already exists
         validation : bool, optional
@@ -280,6 +289,11 @@ class H5Dataset(ABC):
         h5py.Dataset
             The created dataset.
         """
+
+        # can't create a DNAStream dataset without a schema
+        if not isinstance(schema, Schema):
+            raise ValueError("schema must be of type 'dnastream.Schema'")
+
         if if_exists in ["raise", "open"]:
 
             if self.exists():
@@ -294,7 +308,8 @@ class H5Dataset(ABC):
                         f"Registry aleady exists at {self.path}, returning existing handle.",
                         stacklevel=2,
                     )
-                    return self.open()
+                    self._schema = schema
+                    return self.open(schema)
 
         else:
             raise ValueError(
@@ -318,14 +333,11 @@ class H5Dataset(ABC):
                 f"they are controlled by H5Dataset."
             )
 
-        if "dtype" not in schema:
-            raise ValueError("schema must contain key 'dtype'")
-
         ds = self._parent.create_dataset(
             self._name,
             shape=shape,
             maxshape=maxshape,
-            dtype=schema["dtype"],
+            dtype=schema.dtype,
             compression=compression,
             compression_opts=compression_opts,
             chunks=chunks,
@@ -333,17 +345,13 @@ class H5Dataset(ABC):
         )
 
         # Persist schema identity on disk
-        if "schema_version" in schema:
-            ds.attrs["schema_version"] = str(schema["schema_version"])
-        if "schema_hash" in schema:
-            ds.attrs["schema_hash"] = str(schema["schema_hash"])
-        if "schema_pairs" in schema:
-            ds.attrs["schema_pairs_json"] = json.dumps(
-                list(schema["schema_pairs"]),
-                separators=(",", ":"),
-            )
+        ds.attrs["schema_version"] = str(schema.version)
+        ds.attrs["schema_hash"] = schema.hash()
+        ds.attrs["schema_pairs_json"] = schema.json_pairs()
 
         ds.attrs["name"] = str(self._name)
+
+        self._schema = schema
 
         if validate:
             self.validate()

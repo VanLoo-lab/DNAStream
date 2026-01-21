@@ -17,14 +17,25 @@ from ._h5base import H5Dataset
 from .utils import norm_key, as_str, as_str_vec
 import pandas as pd
 import collections.abc as cabc
+from .schema import Schema
 
 
 _VALID_MODES = {"active_only", "all", "non_active"}
 _BY_OPTIONS = {"label", "id"}
-_REGISTRY_SPINE = {"active", "id", "idx", "label", "created_at", "created_by"}
+_REGISTRY_SPINE = {
+    "active",
+    "id",
+    "idx",
+    "label",
+    "created_at",
+    "created_by",
+    "modified_by",
+    "modified_at",
+}
 _LABEL_SCALARS = (str, bytes, np.str_, np.bytes_)  # allow only label-ish things
 _ID_SCALARS = (str, bytes, np.str_, np.bytes_, uuid.UUID)
-_STRLIKE = (str, bytes, np.str_, np.bytes_)
+# _STRLIKE = (str, bytes, np.str_, np.bytes_)
+# _BYTELIKE = ( bytes, np.bytes_)
 
 
 class Registry(H5Dataset):
@@ -77,7 +88,6 @@ class Registry(H5Dataset):
 
         # initialize caches
         self._cache_valid = False
-        self._cache_mode = None  # None / "active_only" / "non_active" / "all"
         self._label_to_id = None
         self._id_to_label = None
         self._label_to_idx = None
@@ -92,10 +102,7 @@ class Registry(H5Dataset):
             n = len(self)
         except Exception:
             pass
-        return (
-            f"Registry(name={self.name!r}, path={self.path!r}, "
-            f"n={n}, mode={self._cache_mode!r})"
-        )
+        return f"Registry(name={self.name!r}, path={self.path!r}, " f"n={n})"
 
     def __iter__(self):
         for row in self._ds():  # or your own row-yielding logic
@@ -118,22 +125,67 @@ class Registry(H5Dataset):
 
         item = norm_key(as_str(items[0]))
 
-        self._load_cache(cache_mode="all")
+        self._load_cache()
         return item in self._id_to_idx
 
-    # TODO: implement getitem method
-    def __getitem__(self):
-        raise NotImplementedError
+    def __getitem__(self, item) -> dict[str, object]:
+        """Return a registry row (as a dict) by id.
 
-    def add(self, rows: list[dict], schema: dict, activate_new: bool = True) -> None:
+        Parameters
+        ----------
+        item
+            Registry id (UUID, str, or bytes). Must be a scalar.
+
+        Returns
+        -------
+        dict[str, object]
+            Mapping from field name to value. Byte fields are decoded as UTF-8 and
+            NumPy scalars are converted to Python scalars.
+
+        Raises
+        ------
+        KeyError
+            If the id is not present.
+        TypeError
+            If `item` is not a scalar id-like value.
+        """
+        if item is None:
+            raise KeyError("None is not a valid registry id.")
+
+        is_scalar, items = self._validate_id_selector(item)
+        if not is_scalar:
+            raise TypeError(
+                f"Registry id lookup expects a scalar; got {type(item).__name__}."
+            )
+
+        rid = norm_key(as_str(items[0]))
+
+        self._load_cache()
+        row = self._row_by_id(rid)
+
+        out: dict[str, object] = {}
+        for name in row.dtype.names:
+            v = row[name]
+
+            # decode fixed-length HDF5 strings
+            if isinstance(v, (bytes, np.bytes_)):
+                v = v.decode("utf-8")
+
+            # convert numpy scalars (np.int64, np.bool_, etc.) to Python scalars
+            elif isinstance(v, np.generic):
+                v = v.item()
+
+            out[name] = v
+
+        return out
+
+    def add(self, rows: list[dict], activate_new: bool = True) -> None:
         """Append rows to the registry (append-only insert).
 
         Parameters
         ----------
         rows : list[dict]
             Records to insert. Keys matching dataset fields will be written.
-        schema : dict
-            Schema dictionary used to open/validate the dataset.
         activate_new : bool, optional
             Collision policy when an incoming label matches an *active* existing label.
 
@@ -160,23 +212,31 @@ class Registry(H5Dataset):
         - ``created_at``: UTC ISO 8601 timestamp ending in ``"Z"``
         - ``created_by``: current username
         """
-        ds = self.open(schema)
+
+        ds = self.open()
         n0 = ds.shape[0]
         names = ds.dtype.names
 
         n_add = len(rows)
         if n_add == 0:
-            return []
+            return
 
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         user = getpass.getuser()
 
         # Compute labels (or None) and find collisions against *active* existing rows
-        labels = as_str_vec(self._label_normalizer(rows, schema))
+        if not self.schema.label_required:
+            labels = None
+        else:
+            labels = as_str_vec([self.schema.make_label(row) for row in rows])
+            if any(not lab for lab in labels):
+                raise ValueError("Empty label produced for at least one input row.")
 
         collisions: list[tuple[int, int]] = []
         if labels is not None:
             collisions = self._detect_label_collisons(labels, active_only=True)
+
+        protected = set(_REGISTRY_SPINE)
 
         # Resize and allocate block
 
@@ -195,6 +255,8 @@ class Registry(H5Dataset):
         block["active"] = True
         block["created_at"] = now
         block["created_by"] = user
+        block["modified_at"] = now
+        block["modified_by"] = user
 
         if "idx" in names:
             block["idx"] = np.arange(n0, n0 + n_add)
@@ -203,7 +265,7 @@ class Registry(H5Dataset):
         if collisions:
             if activate_new:
                 # Deactivate existing active rows
-                self.deactivate_labels([labels[new_i] for new_i, old_i in collisions])
+                self.deactivate_labels([labels[new_i] for new_i, _ in collisions])
             else:
                 # Keep existing active: mark new colliding rows inactive+deprecated
                 new_idxs = [new_i for new_i, _old_i in collisions]
@@ -212,21 +274,116 @@ class Registry(H5Dataset):
         # Fill from input
         for i, row in enumerate(rows):
             for name in names:
+                if name in protected:
+                    continue
+
                 if name in row and row[name] is not None:
+                    field = self.schema.field(name)
+                    value = row[name]
+                    if field.validator is not None:
+                        field.validator(value)
+
                     if ds.dtype[name].kind in ("O", "U"):
-                        block[name][i] = str(row[name])
+                        block[name][i] = str(value)
                     elif ds.dtype[name].kind == "S":
-                        block[name][i] = str(row[name]).encode("utf-8")
+                        block[name][i] = str(value).encode("utf-8")
                     else:
-                        block[name][i] = row[name]
+                        block[name][i] = value
 
         ds.resize((n0 + n_add,))
         ds[n0 : n0 + n_add] = block
 
         self._invalidate_cache()
 
-    def resolve_id(self, labels, *, missing=np.nan) -> np.ndarray:
-        """Resolve label(s) to id(s) in ``mode='active_only'``.
+    def update(self, rows: list[dict], *, warn_missing=True) -> None:
+        ds = self.open()
+        names = set(ds.dtype.names or ())
+
+        if not rows:
+            return
+
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        user = getpass.getuser()
+
+        non_editable = _REGISTRY_SPINE
+        if self.schema.label_from is not None:
+            non_editable |= set(self.schema.label_from)
+
+        self._load_cache()
+
+        records_to_update = []
+        indices = []
+        for row in rows:
+            if "id" not in row:
+                raise ValueError(
+                    "'id' field not found. Must be present in dictionary to update registry!"
+                )
+
+            rid = norm_key(as_str(row["id"]))
+
+            idx = self._idx_for_id(rid)
+
+            if idx is None:
+
+                if warn_missing:
+                    self._warn_missing([rid], mode="all")
+                continue
+
+            rec = self._row(idx)
+
+            changed = False
+            for key, val in row.items():
+                if key == "id":
+                    continue
+                if key in non_editable:
+                    warnings.warn(
+                        f"Field {key} is non-editable, metadata for {rid!r} and {key} not modified."
+                    )
+                    continue
+                if key not in names:
+                    continue
+
+                # Encode / coerce to match HDF5 dtype expectations
+                field = self.schema.field(key)
+                if field.validator is not None:
+                    field.validator(val)
+                kind = ds.dtype[key].kind
+                if kind == "S":  # fixed-width bytes
+                    rec[key] = ("" if val is None else str(val)).encode("utf-8")
+                elif kind in ("U", "O"):  # unicode/object
+                    rec[key] = "" if val is None else str(val)
+                else:
+                    rec[key] = val
+
+                changed = True
+
+            if changed:
+
+                rec["modified_by"] = (
+                    str(user).encode("utf-8")
+                    if ds.dtype["modified_by"].kind == "S"
+                    else str(user)
+                )
+                rec["modified_at"] = (
+                    str(now).encode("utf-8")
+                    if ds.dtype["modified_at"].kind == "S"
+                    else str(now)
+                )
+
+                indices.append(idx)
+                records_to_update.append(rec)
+
+        indices = np.asarray(indices, np.int64)
+        records = np.asarray(records_to_update, dtype=ds.dtype)
+
+        sorted_idx = np.argsort(np.asarray(indices, np.int64))
+        sorted_indices = indices[sorted_idx]
+        sorted_records = records[sorted_idx]
+
+        ds[sorted_indices] = sorted_records
+
+    def resolve_ids(self, labels, *, missing=np.nan) -> np.ndarray:
+        """Resolve label(s) to ACTIVE id(s) '``.
 
         Parameters
         ----------
@@ -242,16 +399,12 @@ class Registry(H5Dataset):
         numpy.ndarray
             Array of ids aligned to input order.
 
-        Raises
-        ------
-        ValueError
-            If `mode` is not ``"active_only"``.
         """
         # validate the input
 
         is_scalar, sel = self._validate_label_selector(labels)
 
-        self._load_cache(cache_mode="active_only")
+        self._load_cache()
         return self._resolve_from_map(
             sel,
             self._label_to_id,
@@ -260,8 +413,8 @@ class Registry(H5Dataset):
             is_scalar=is_scalar,
         )
 
-    def resolve_label(self, ids, *, missing=np.nan) -> np.ndarray:
-        """Resolve id(s) to label(s) under the given view mode.
+    def resolve_labels(self, ids, *, missing=np.nan) -> np.ndarray:
+        """Resolve id(s) to label(s).
 
         Parameters
         ----------
@@ -280,7 +433,7 @@ class Registry(H5Dataset):
 
         is_scalar, sel = self._validate_id_selector(ids)
 
-        self._load_cache(cache_mode="active_only")
+        self._load_cache()
         return self._resolve_from_map(
             sel,
             self._id_to_label,
@@ -306,7 +459,7 @@ class Registry(H5Dataset):
 
         Notes
         -----
-        Unlike :meth:`resolve_id`, this can return multiple ids per label.
+        Unlike :meth:`resolve_ids`, this can return multiple ids per label.
         """
         return self._find_multiple(labels, mode=mode, return_field="id")
 
@@ -604,22 +757,18 @@ class Registry(H5Dataset):
 
     def open(
         self,
-        expected_schema: dict | None = None,
+        schema: Schema | None = None,
         *,
         strict: bool = True,
-        mode="active_only",
     ) -> h5py.Dataset:
         """Open the underlying HDF5 dataset and populate lookup caches.
 
         Parameters
         ----------
-        expected_schema : dict or None, optional
-            Expected schema dictionary passed through to the base :meth:`H5Dataset.open`.
-            If provided, the dataset schema may be validated.
+        schema : Schema or None, optional
+            Schema used to validate schema identity. If None, uses the cached schema from the last successful create/open.
         strict : bool, optional
             If True, enforce strict schema identity checks.
-        mode : {"active_only", "non_active", "all"}, optional
-            View mode used to build caches.
 
         Returns
         -------
@@ -631,9 +780,9 @@ class Registry(H5Dataset):
         ValueError
             If `mode` is invalid.
         """
-        mode = self._validate_mode(mode)
-        ds = super().open(expected_schema, strict=strict)
-        self._load_cache(cache_mode=mode)
+
+        ds = super().open(schema, strict=strict)
+        self._load_cache()
         return ds
 
     def _invalidate_cache(self) -> None:
@@ -644,7 +793,6 @@ class Registry(H5Dataset):
         Caches are rebuilt on demand by :meth:`open` / :meth:`_load_cache`.
         """
         self._cache_valid = False
-        self._cache_mode = None
         self._label_to_id = None
         self._id_to_label = None
         self._label_to_idx = None
@@ -710,13 +858,10 @@ class Registry(H5Dataset):
             )
         return by
 
-    def _load_cache(self, *, cache_mode="active_only") -> None:
+    def _load_cache(self) -> None:
         """Build in-memory caches for fast id/label resolution.
 
-        Parameters
-        ----------
-        cache_mode : {"active_only", "non_active", "all"}, optional
-            View mode for cache construction.
+
 
         Raises
         ------
@@ -730,14 +875,13 @@ class Registry(H5Dataset):
         - In other modes, label-based caches are not built because labels may map to
           multiple rows.
         """
-        cache_mode = self._validate_mode(cache_mode)
 
-        if self._cache_valid and self._cache_mode == cache_mode:
+        if self._cache_valid:
             return
         ds = self._ds()
         names = ds.dtype.names
 
-        required = {"id", "label", "idx", "active"}
+        required = _REGISTRY_SPINE
         missing = required - set(names)
         if missing:
             raise ValueError(
@@ -750,47 +894,33 @@ class Registry(H5Dataset):
         idxs = ds["idx"][:]
         active = ds["active"][:].astype(bool)
 
-        if cache_mode == "active_only":
-            mask = active
-        elif cache_mode == "non_active":
-            mask = np.logical_not(active)
-        else:
-            mask = np.ones(ds.shape[0], dtype=bool)
-
         label_to_id = {}
         id_to_label = {}
         id_to_idx = {}
         label_to_idx = {}
 
-        for lab, rid, idx, ok in zip(labels, ids, idxs, mask):
+        for lab, rid, idx, ok in zip(labels, ids, idxs, active):
             if not ok:
                 continue
             labn = norm_key(lab)
             ridn = norm_key(rid)
-            if labn in label_to_idx:
-                if cache_mode == "active_only":
-                    raise ValueError(
-                        f"Duplicate active label '{labn}' in registry '{self.name}'"
-                    )
+            if ok and labn in label_to_idx:
+                raise ValueError(
+                    f"Duplicate active label '{labn}' in registry '{self.name}'"
+                )
             if ridn in id_to_idx:
                 raise ValueError(f"Duplicate id '{ridn}' in registry '{self.name}'")
-            label_to_idx[labn] = int(idx)
+            if ok:
+                label_to_idx[labn] = int(idx)
+                label_to_id[labn] = ridn
             id_to_idx[ridn] = int(idx)
-            label_to_id[labn] = ridn
             id_to_label[ridn] = labn
 
-        # don't populate potential many to one caches (used find_*() instead)
-        if cache_mode != "active_only":
-            self._label_to_idx = None
-            self.label_to_id = None
-        else:
-            self._label_to_id = label_to_id
-            self._label_to_idx = label_to_idx
-
+        self._label_to_id = label_to_id
+        self._label_to_idx = label_to_idx
         self._id_to_idx = id_to_idx
         self._id_to_label = id_to_label
         self._cache_valid = True
-        self._cache_mode = cache_mode
 
     def _set_state(
         self,
@@ -838,69 +968,72 @@ class Registry(H5Dataset):
         if not np.all(after == active):
             raise RuntimeError(f"Correct state '{active}' not set on disk")
 
-    def _label_normalizer(self, rows: list[dict], schema: dict) -> list[str] | None:
-        """Compute labels for a batch of input rows.
+    # @staticmethod
+    # def _label_normalizer(rows: list[dict], schema: Schema) -> list[str] | None:
+    #     """Compute labels for a batch of input rows.
 
-        Parameters
-        ----------
-        rows : list[dict]
-            Incoming records.
-        schema : dict
-            Registry schema dictionary. Expected keys:
+    #     Parameters
+    #     ----------
+    #     rows : list[dict]
+    #         Incoming records.
+    #     schema : dnastream.Schema
+    #         Registry schema object with attributes:
 
-            - ``label_required`` : bool
-            - ``label_from`` : iterable of field names (or None)
-            - ``label_normalizer`` : callable
+    #         - ``label_required`` : bool
+    #         - ``label_from`` : iterable of field names (or None)
+    #         - ``label_normalizer`` : callable
 
-        Returns
-        -------
-        list[str] or None
-            Normalized labels for each row if ``label_required`` is True; otherwise None.
+    #     Returns
+    #     -------
+    #     list[str] or None
+    #         Normalized labels for each row if ``label_required`` is True; otherwise None.
 
-        Raises
-        ------
-        ValueError
-            If required label fields are missing, the normalizer is not callable, or
-            any produced label is empty.
+    #     Raises
+    #     ------
+    #     ValueError
+    #         If required label fields are missing, the normalizer is not callable, or
+    #         any produced label is empty.
 
-        Notes
-        -----
-        If a row already contains a ``"label"`` key, it will be overwritten and a
-        warning is emitted.
-        """
-        label_required = schema.get("label_required", False)
+    #     Notes
+    #     -----
+    #     If a row already contains a ``"label"`` key, it will be overwritten and a
+    #     warning is emitted.
+    #     """
 
-        if not label_required:
-            return None
+    #     if not isinstance(schema, Schema):
+    #         raise ValueError("Provided schema not an instance of dnastream.Schema")
 
-        labels: list[str] = []
-        label_from = schema.get("label_from", None)
-        label_normalizer_fn = schema.get("label_normalizer", None)
+    #     if not schema.label_required:
+    #         return None
 
-        if not callable(label_normalizer_fn):
-            raise ValueError(
-                "schema.label_normalizer must be callable when label_from is set."
-            )
+    #     labels: list[str] = []
+    #     label_from = schema.label_from
+    #     label_normalizer_fn = schema.label_normalizer
 
-        for idx, r in enumerate(rows):
-            if "label" in r:
-                warnings.warn(f"label {r['label']} overwritten")
+    #     if not callable(label_normalizer_fn):
+    #         raise ValueError(
+    #             "schema.label_normalizer must be callable when label_from is set."
+    #         )
 
-            try:
-                args = [r[f] for f in label_from]
-            except KeyError as e:
-                raise ValueError(
-                    f"Row {idx} missing required label field {e!s}"
-                ) from None
+    #     for idx, r in enumerate(rows):
+    #         if "label" in r:
+    #             warnings.warn(f"label {r['label']} overwritten")
 
-            lab = label_normalizer_fn(*args)
+    #         try:
+    #             args = [r[f] for f in label_from]
+    #         except KeyError as e:
+    #             raise ValueError(
+    #                 f"Row {idx} missing required label field {e!s}"
+    #             ) from None
 
-            if not lab:
-                raise ValueError(f"Row {idx} produced an empty label.")
+    #         lab = label_normalizer_fn(*args)
 
-            labels.append(lab)
+    #         if not lab:
+    #             raise ValueError(f"Row {idx} produced an empty label.")
 
-        return labels
+    #         labels.append(lab)
+
+    #     return labels
 
     def _detect_label_collisons(
         self,
@@ -980,6 +1113,50 @@ class Registry(H5Dataset):
                 collisions.append((new_i, old_i))
 
         return collisions
+
+    def _row(self, idx: int | np.integer) -> np.void:
+        """Return the on-disk row at integer index `idx`.
+
+        Notes
+        -----
+        This is an internal helper. It validates bounds against the dataset shape.
+        """
+        ds = self._ds()
+
+        if idx is None:
+            raise TypeError("idx cannot be None")
+
+        try:
+            idx_i = int(idx)
+        except (TypeError, ValueError) as e:
+            raise TypeError(f"idx must be an integer; got {type(idx).__name__}.") from e
+
+        if idx_i < 0 or idx_i >= len(self):
+            raise IndexError(
+                f"Row index {idx_i} out of bounds for dataset of length {len(self)}"
+            )
+
+        return ds[idx_i]
+
+    def _idx_for_id(self, id) -> int | None:
+        """Return row index for a given id, or None if missing."""
+        # Ensure id->idx cache exists (id caches are valid for any mode).
+        self._load_cache()
+        key = norm_key(as_str(id))
+        return self._id_to_idx.get(key, None)
+
+    def _row_by_id(self, id) -> np.void:
+        """Return the on-disk row for a given id.
+
+        Raises
+        ------
+        KeyError
+            If the id is not present.
+        """
+        idx = self._idx_for_id(id)
+        if idx is None:
+            raise KeyError(f"id {id!r} not found in Registry '{self.name}'.")
+        return self._row(idx)
 
     def _resolve_from_map(
         self,
@@ -1078,19 +1255,8 @@ class Registry(H5Dataset):
             return np.asarray([], dtype=int)
 
         # Ensure caches exist for this view. Note: id->idx is valid in any mode.
-        self._load_cache(cache_mode=mode)
-
-        def _warn_missing(missing_items) -> None:
-            if not warn_missing:
-                return
-            missing_items = list(missing_items)
-
-            if len(missing_items) == 0:
-                return
-            warnings.warn(
-                f"Requested selection(s) {missing_items!r} not found in Registry '{self.name}'.",
-                stacklevel=2,
-            )
+        self._load_cache()
+        ds = self._ds()
 
         # ---- by == 'id' -------------------------------------------------
         if by == "id":
@@ -1102,9 +1268,20 @@ class Registry(H5Dataset):
             )
             idx = np.asarray(idx, dtype=object)
             miss_mask = pd.isna(idx)
-            _warn_missing([req for req, m in zip(selector, miss_mask.tolist()) if m])
-            out = idx[~miss_mask].astype(int)
-            return np.unique(out)
+            if warn_missing:
+                self._warn_missing(
+                    [req for req, m in zip(selector, miss_mask.tolist()) if m]
+                )
+            all = idx[~miss_mask].astype(int)
+            if mode == "all":
+
+                return np.unique(all)
+            elif mode == "active_only":
+                mask = ds["active"]
+                return np.unique(all[mask])
+            else:  # non-active
+                mask = ~ds["active"]
+                return np.unique(all[mask])
 
         # ---- by == 'label' ----------------------------------------------
         # Fast path: active_only has unique label->idx cache
@@ -1117,7 +1294,10 @@ class Registry(H5Dataset):
             )
             idx = np.asarray(idx, dtype=object)
             miss_mask = pd.isna(idx)
-            _warn_missing([req for req, m in zip(selector, miss_mask.tolist()) if m])
+            if warn_missing:
+                self._warn_missing(
+                    [req for req, m in zip(selector, miss_mask.tolist()) if m]
+                )
             out = idx[~miss_mask].astype(int)
             return np.unique(out)
 
@@ -1127,7 +1307,8 @@ class Registry(H5Dataset):
         hits = self._find_multiple(want, mode=mode, return_field="idx")
         missing = [lab for lab, arr in hits.items() if arr is None or len(arr) == 0]
 
-        _warn_missing(sorted(missing))
+        if warn_missing:
+            self._warn_missing(sorted(missing))
 
         if allow_many:
             flat: list[int] = []
@@ -1140,7 +1321,6 @@ class Registry(H5Dataset):
             return np.unique(np.asarray(flat, dtype=int))
 
         # allow_many=False: choose a single winner per label
-        ds = self._ds()
         winners: list[int] = []
         for lab_norm, idxs_arr in hits.items():
             idxs = [int(i) for i in np.asarray(idxs_arr, dtype=object).tolist()]
@@ -1249,6 +1429,17 @@ class Registry(H5Dataset):
                     out_lists[key].append(int(val))
 
         return {k: np.asarray(v, dtype=object) for k, v in out_lists.items()}
+
+    def _warn_missing(self, missing_items) -> None:
+
+        missing_items = list(missing_items)
+
+        if len(missing_items) == 0:
+            return
+        warnings.warn(
+            f"Requested selection(s) {missing_items!r} not found in Registry '{self.name}'.",
+            stacklevel=2,
+        )
 
     @staticmethod
     def _normalize_selector(

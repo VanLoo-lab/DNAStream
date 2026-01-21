@@ -3,11 +3,12 @@ import pytest
 import h5py
 from dnastream import DNAStream
 from dnastream.registry import Registry
+from dnastream.schema import Schema, Field
 import numpy as np
-import hashlib
-import json
+
 
 STR_DTYPE = h5py.string_dtype("utf-8")
+
 
 REGISTRY_SPINE = (
     ("id", STR_DTYPE),  # UUIDv4 string
@@ -16,6 +17,8 @@ REGISTRY_SPINE = (
     ("active", np.bool_),
     ("created_at", STR_DTYPE),  # ISO8601 Z
     ("created_by", STR_DTYPE),
+    ("modified_at", STR_DTYPE),  # ISO8601 Z
+    ("modified_by", STR_DTYPE),
 )
 
 
@@ -36,26 +39,18 @@ def temp_h5_handle(temp_h5_file):
 
 @pytest.fixture
 def temp_data_schema():
-    temp_spec = (("variable", h5py.string_dtype("utf-8")), ("value", np.int64))
-
-    payload = json.dumps(
-        [(k, str(v)) for k, v in temp_spec],
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-
-    temp_schema = {
-        "spec": temp_spec,
-        "dtype": np.dtype(list(temp_spec)),
-        "columns": [k for k, _ in temp_spec],
-        "schema_pairs": [(k, str(v)) for k, v in temp_spec],
-        "schema_hash": hashlib.sha256(payload).hexdigest(),
-        "schema_version": "1.0.1",
-        "label_from": "variable",
-        "label_normalizer": lambda x: x.lower() if isinstance(x, str) else "",
-        "label_required": True,
-    }
-    return temp_schema
+    temp_spec = (
+        Field(name="variable", dtype=h5py.string_dtype("utf-8"), required=False),
+        Field(name="value", dtype=np.int64, required=False),
+    )
+    return Schema(
+        fields=temp_spec,
+        version="1.0.1",
+        label_from=("variable",),
+        label_required=True,
+        label_builder=lambda x: x.lower() if isinstance(x, str) else "",
+        label_normalizer=lambda x: str(x),
+    )
 
 
 @pytest.fixture
@@ -65,25 +60,24 @@ def temp_registry_schema():
         ("value", np.int64),
     )
 
-    payload = json.dumps(
-        [(k, str(v)) for k, v in temp_spec],
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    def validator(x):
+        pass
 
-    temp_reg_schema = {
-        "spec": temp_spec,
-        "dtype": np.dtype(list(temp_spec)),
-        "columns": [k for k, _ in temp_spec],
-        "schema_pairs": [(k, str(v)) for k, v in temp_spec],
-        "schema_hash": hashlib.sha256(payload).hexdigest(),
-        "schema_version": "1.0.1",
-        "label_from": ("variable",),
-        "label_normalizer": lambda x: x.lower() if isinstance(x, str) else "",
-        # "label_normalizer": lambda x: "",
-        "label_required": True,
-    }
-    return temp_reg_schema
+    registry_fields = tuple(
+        Field(
+            name=name, dtype=dtype, required=name in REGISTRY_SPINE, validator=validator
+        )
+        for name, dtype in temp_spec
+    )
+
+    return Schema(
+        fields=registry_fields,
+        version="1.0.1",
+        label_from=("variable",),
+        label_required=True,
+        label_builder=lambda x: x.lower(),
+        label_normalizer=lambda x: str(x),
+    )
 
 
 @pytest.fixture
