@@ -5,7 +5,7 @@ import socket
 from datetime import datetime, timezone
 import uuid
 from .registry import Registry
-from .schemas import SCHEMA_VERSION, REGISTRIES
+from ._builtin_schemas import SCHEMA_VERSION, REGISTRIES
 
 import logging
 

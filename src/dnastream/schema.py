@@ -25,11 +25,12 @@ class Schema:
     _field_by_name: dict[str, Field] = field(init=False, repr=False)
 
     def __post_init__(self):
-        object.__setattr__(self, "dtype", np.dtype(list(self.get_spec())))
+
         fb = {f.name: f for f in self.fields}
 
         if len(fb) != len(self.fields):
             raise ValueError("Duplicate field names in schema.")
+        object.__setattr__(self, "dtype", np.dtype(list(self.get_spec())))
         object.__setattr__(self, "_field_by_name", fb)
 
     def field(self, name: str) -> Field:

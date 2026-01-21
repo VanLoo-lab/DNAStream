@@ -1,6 +1,8 @@
 import pytest
 import h5py
 from tests.helpers.h5dataset import _TestH5Dataset
+from dataclasses import replace
+from dnastream.schema import Field
 
 
 """
@@ -37,9 +39,9 @@ def test_h5dataset_create(temp_h5_handle, temp_data_schema):
     handle = dt.open(temp_data_schema, strict=True)
     assert handle
     assert handle.name == "/data/my_data"
-    assert handle.dtype.descr == temp_data_schema["dtype"].descr
-    assert handle.attrs["schema_version"] == str(temp_data_schema["schema_version"])
-    assert handle.attrs["schema_hash"] == str(temp_data_schema["schema_hash"])
+    assert handle.dtype.descr == temp_data_schema.dtype.descr
+    assert handle.attrs["schema_version"] == str(temp_data_schema.version)
+    assert handle.attrs["schema_hash"] == str(temp_data_schema.hash())
     assert "schema_pairs_json" in handle.attrs
 
 
@@ -54,8 +56,7 @@ def test_h5dataset_open_raises_on_schema_version_mismatch(
     dt = _TestH5Dataset(parent, "my_data")
     dt.create(temp_data_schema)
 
-    bad = dict(temp_data_schema)
-    bad["schema_version"] = "9.9.9"
+    bad = replace(temp_data_schema, version="9.9.9")
 
     with pytest.raises(ValueError, match="schema_version mismatch"):
         dt.open(bad, strict=True)
@@ -72,8 +73,7 @@ def test_h5dataset_open_raises_on_schema_hash_mismatch(
     dt = _TestH5Dataset(parent, "my_data")
     dt.create(temp_data_schema)
 
-    bad = dict(temp_data_schema)
-    bad["schema_hash"] = "not-the-same"
+    bad = replace(temp_data_schema, fields=(Field(name="foo", dtype="S10"),))
 
     with pytest.raises(ValueError, match="schema_hash mismatch"):
         dt.open(bad, strict=True)
@@ -89,8 +89,7 @@ def test_h5dataset_open_warns_when_not_strict(temp_h5_handle, temp_data_schema):
     dt = _TestH5Dataset(parent, "my_data")
     dt.create(temp_data_schema)
 
-    bad = dict(temp_data_schema)
-    bad["schema_hash"] = "not-the-same"
+    bad = replace(temp_data_schema, fields=(Field(name="foo", dtype="S10"),))
 
     with pytest.warns(UserWarning):
         dt.open(bad, strict=False)
@@ -130,18 +129,4 @@ def test_h5dataset_create_refuses_dtype(temp_h5_handle, temp_data_schema):
     parent = temp_h5_handle.require_group("data")
     dt = _TestH5Dataset(parent, "my_data")
     with pytest.raises(TypeError):
-        dt.create(temp_data_schema, dytpe="i4")
-
-
-def test_h5dataset_create_refuses_if_exists(temp_h5_handle, temp_data_schema):
-    """
-    Given an existing dataset with a stored schema identity,
-    when the passed schema does not contain a dtype
-    then create() throws a ValueError
-    """
-    parent = temp_h5_handle.require_group("data")
-    dt = _TestH5Dataset(parent, "my_data")
-    del temp_data_schema["dtype"]
-
-    with pytest.raises(ValueError):
-        dt.create(temp_data_schema)
+        dt.create(temp_data_schema, dtype="i4")
