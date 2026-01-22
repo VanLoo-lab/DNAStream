@@ -18,8 +18,8 @@ nav:
     - Registry: design/REGISTRY.md
   - API:
       # - DNAStream: api/dnastream.md
-      - Registry: api/indexmanager.md
-      # - Schema: api/metadata.md
+      - Registry: api/registry.md
+      - Schema: api/schema.md
 
 
 plugins:

@@ -109,6 +109,15 @@ class Schema:
 
         if len(fb) != len(self.fields):
             raise ValueError("Duplicate field names in schema.")
+
+        if self.label_from is None and self.label_required:
+            raise ValueError("'label_from' cannot be 'None' when label is required.")
+
+        if self.label_from and self.label_required:
+            for x in self.label_from:
+                if str(x) not in fb:
+                    raise ValueError(f" label_from Field {x!r} not found in Schema.")
+
         object.__setattr__(self, "dtype", np.dtype(list(self.get_spec())))
         object.__setattr__(self, "_field_by_name", fb)
 
@@ -224,7 +233,8 @@ class Schema:
             Compact JSON string encoding of ``schema_pairs``.
         """
         return json.dumps(
-            [(k, str(v)) for k, v in self.get_spec()], separators=(",", ":")
+            sorted([(k, str(v)) for k, v in self.get_spec()], key=lambda x: x[0]),
+            separators=(",", ":"),
         )
 
     def json_pairs(self):
