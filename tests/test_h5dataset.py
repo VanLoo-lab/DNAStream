@@ -73,7 +73,13 @@ def test_h5dataset_open_raises_on_schema_hash_mismatch(
     dt = _TestH5Dataset(parent, "my_data")
     dt.create(temp_data_schema)
 
-    bad = replace(temp_data_schema, fields=(Field(name="foo", dtype="S10"),))
+    bad = replace(
+        temp_data_schema,
+        fields=(
+            Field(name="foo", dtype="S10"),
+            Field("variable", h5py.string_dtype("utf-8"), required=True),
+        ),
+    )
 
     with pytest.raises(ValueError, match="schema_hash mismatch"):
         dt.open(bad, strict=True)
@@ -89,7 +95,13 @@ def test_h5dataset_open_warns_when_not_strict(temp_h5_handle, temp_data_schema):
     dt = _TestH5Dataset(parent, "my_data")
     dt.create(temp_data_schema)
 
-    bad = replace(temp_data_schema, fields=(Field(name="foo", dtype="S10"),))
+    bad = replace(
+        temp_data_schema,
+        fields=(
+            Field(name="foo", dtype="S10"),
+            Field("variable", h5py.string_dtype("utf-8"), required=True),
+        ),
+    )
 
     with pytest.warns(UserWarning):
         dt.open(bad, strict=False)

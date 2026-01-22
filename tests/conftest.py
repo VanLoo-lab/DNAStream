@@ -11,14 +11,14 @@ STR_DTYPE = h5py.string_dtype("utf-8")
 
 
 REGISTRY_SPINE = (
-    ("id", STR_DTYPE),  # UUIDv4 string
-    ("label", STR_DTYPE),  # user-facing unique key
-    ("idx", np.int64),
-    ("active", np.bool_),
-    ("created_at", STR_DTYPE),  # ISO8601 Z
-    ("created_by", STR_DTYPE),
-    ("modified_at", STR_DTYPE),  # ISO8601 Z
-    ("modified_by", STR_DTYPE),
+    Field("id", STR_DTYPE, True, None),  # UUIDv4 string
+    Field("label", STR_DTYPE, True, None),  # user-facing unique key
+    Field("idx", np.int64, True, None),
+    Field("active", np.bool_, True, None),
+    Field("created_at", STR_DTYPE, True, None),  # ISO8601 Z
+    Field("created_by", STR_DTYPE, True, None),
+    Field("modified_at", STR_DTYPE, True, None),  # ISO8601 Z
+    Field("modified_by", STR_DTYPE, True, None),
 )
 
 
@@ -40,7 +40,7 @@ def temp_h5_handle(temp_h5_file):
 @pytest.fixture
 def temp_data_schema():
     temp_spec = (
-        Field(name="variable", dtype=h5py.string_dtype("utf-8"), required=False),
+        Field(name="variable", dtype=h5py.string_dtype("utf-8"), required=True),
         Field(name="value", dtype=np.int64, required=False),
     )
     return Schema(
@@ -48,34 +48,26 @@ def temp_data_schema():
         version="1.0.1",
         label_from=("variable",),
         label_required=True,
-        label_builder=lambda x: x.lower() if isinstance(x, str) else "",
+        label_builder=lambda variable: (
+            variable.lower() if isinstance(variable, str) else ""
+        ),
         label_normalizer=lambda x: str(x),
     )
 
 
 @pytest.fixture
 def temp_registry_schema():
-    temp_spec = REGISTRY_SPINE + (
-        ("variable", h5py.string_dtype("utf-8")),
-        ("value", np.int64),
-    )
-
-    def validator(x):
-        pass
-
-    registry_fields = tuple(
-        Field(
-            name=name, dtype=dtype, required=name in REGISTRY_SPINE, validator=validator
-        )
-        for name, dtype in temp_spec
+    temp_fields = REGISTRY_SPINE + (
+        Field("variable", h5py.string_dtype("utf-8"), required=True),
+        Field("value", np.int64),
     )
 
     return Schema(
-        fields=registry_fields,
+        fields=temp_fields,
         version="1.0.1",
         label_from=("variable",),
         label_required=True,
-        label_builder=lambda x: x.lower(),
+        label_builder=lambda x: str(x[0]).lower(),
         label_normalizer=lambda x: str(x),
     )
 

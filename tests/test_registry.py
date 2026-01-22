@@ -34,19 +34,19 @@ def test_registry_not_created_twice(registry_obj, temp_registry_schema):
         registry_obj.create(temp_registry_schema, if_exists="open")
 
 
-# test that the validate function catches
-"""
-  - checks that ids are unique
-    - checks that registry path is valid
-    - checks that fields include required fields id, label, idx and active
-    - checks row idx are valid, i.e., between 0...size -1 and idx equals row index
-    - checks ids are non-null and valid uuids
-    - checks labels are unique in active only
-"""
+# # test that the validate function catches
+# """
+#   - checks that ids are unique
+#     - checks that registry path is valid
+#     - checks that fields include required fields id, label, idx and active
+#     - checks row idx are valid, i.e., between 0...size -1 and idx equals row index
+#     - checks ids are non-null and valid uuids
+#     - checks labels are unique in active only
+# """
 
 
 def test_registry_is_open_with_cache_mode(
-    registry_obj, temp_registry_schema, temp_data_rows
+    registry_obj,
 ):
     """
     - test that rows are added to the registry
@@ -56,22 +56,10 @@ def test_registry_is_open_with_cache_mode(
     - test that an entry on disk matches the input
 
     """
-    _ = registry_obj.open(temp_registry_schema, mode="active_only")
+    _ = registry_obj.open()
     assert registry_obj._cache_valid
-    assert registry_obj._cache_mode == "active_only"
     assert isinstance(registry_obj._label_to_idx, dict)
     assert isinstance(registry_obj._id_to_idx, dict)
-
-    _ = registry_obj.open(temp_registry_schema, mode="all")
-    assert registry_obj._cache_valid
-    assert registry_obj._cache_mode == "all"
-    assert registry_obj._label_to_idx is None
-    assert isinstance(registry_obj._id_to_idx, dict)
-
-    # test won't open in invalid mode
-
-    with pytest.raises(ValueError):
-        _ = registry_obj.open(temp_registry_schema, mode="foo")
 
 
 def test_add_unique_rows_to_registry(
@@ -84,31 +72,34 @@ def test_add_unique_rows_to_registry(
     - test that an entry on disk matches the input
 
     """
-    registry_obj.add(temp_data_rows, temp_registry_schema)
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    registry_obj.add(temp_data_rows)
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
     assert len(registry_obj) == len(temp_data_rows)
     assert not registry_obj._cache_valid
 
     registry_obj.validate()
-    ids = registry_obj.resolve_id(labs)
+    ids = registry_obj.resolve_ids(labs)
+    print(ids)
+
     assert len(ids) == len(temp_data_rows)
-    disk_labels = registry_obj.resolve_label(ids)
+
+    disk_labels = registry_obj.resolve_labels(ids)
+    print(disk_labels)
+
     assert len(ids) == len(labs)
     assert len(disk_labels) == len(temp_data_rows)
     assert set(disk_labels) == set(labs)
 
     # check that all the labels have been activated
-    df = registry_obj.get(labs, by="label", mode="non_active")
+    with pytest.warns(UserWarning):
+        df = registry_obj.get(labs, by="label", mode="non_active")
     assert df.shape[0] == 0
 
     df = registry_obj.get(labs, by="label", mode="all")
     assert np.all(df["active"])
     assert df.shape[0] == len(registry_obj)
 
-    # should return only 1 row with the "value" stored as 0 on disk
+    # # should return only 1 row with the "value" stored as 0 on disk
     df = registry_obj.get("var0", by="label")
     assert df.shape[0] == 1
     assert df["value"][0] == 0
@@ -123,12 +114,8 @@ def test_add_duplicate_rows_activated_properly(
     - test that old rows with dup labels stay activated and new rows are added but not activated when activate_new=False
     - test that new rows are activated when dup labels exist and old rows with duplicate labels are deactivated
     """
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
-
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
+    registry_obj.add(temp_data_rows)
     assert len(registry_obj) == len(temp_data_rows)
     assert not registry_obj._cache_valid
     df = registry_obj.get(labs, by="label", mode="active_only")
@@ -136,13 +123,13 @@ def test_add_duplicate_rows_activated_properly(
 
     registry_obj.validate()
 
-    registry_obj.add(temp_data_rows, temp_registry_schema, activate_new=False)
+    registry_obj.add(temp_data_rows, activate_new=False)
     assert len(registry_obj) == 2 * len(temp_data_rows)
     assert not registry_obj._cache_valid
 
     registry_obj.validate()
 
-    registry_obj.add(temp_data_rows, temp_registry_schema, activate_new=True)
+    registry_obj.add(temp_data_rows, activate_new=True)
     assert len(registry_obj) == 3 * len(temp_data_rows)
     df = registry_obj.get(labs, by="label", mode="active_only")
     registry_obj.validate()
@@ -155,37 +142,33 @@ def test_find_ids(registry_obj, temp_data_rows, temp_registry_schema):
     """
     Test that find_ids correctly returns multiple ids when there are duplicate labels
     """
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     row_vals = registry_obj.find_ids(labs, mode="all")
     for _, rows in row_vals.items():
         assert len(rows) == 1
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     row_vals = registry_obj.find_ids(labs, mode="all")
     for _, rows in row_vals.items():
         assert len(rows) == 2
 
 
-def test_to_dataframe(registry_obj, temp_data_rows, temp_registry_schema):
+def test_to_dataframe(registry_obj, temp_data_rows):
     """
     Docstring for test_to_dataframe
 
     :param registry_obj: Description
     :param temp_data_rows: Description
-    :param temp_registry_schema: Description
     """
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
 
     df = registry_obj.to_dataframe(mode="all")
     assert isinstance(df, pandas.DataFrame)
     assert df.shape[0] == len(temp_data_rows)
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     df = registry_obj.to_dataframe(mode="active_only")
     assert df.shape[0] == len(temp_data_rows)
 
@@ -200,11 +183,11 @@ def test_to_dataframe(registry_obj, temp_data_rows, temp_registry_schema):
         assert int(var.replace("var", "")) == val
 
 
-def test_contains(registry_obj, temp_data_rows, temp_registry_schema):
+def test_contains(registry_obj, temp_data_rows):
     """
     Test contains as a dunder method
     """
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     df = registry_obj.to_dataframe()
     ids = df["id"].tolist()
     for i in ids:
@@ -213,85 +196,96 @@ def test_contains(registry_obj, temp_data_rows, temp_registry_schema):
     assert uuid.uuid4() not in registry_obj
 
 
-def test_iter(registry_obj, temp_data_rows, temp_registry_schema):
+def test_get_item(registry_obj, temp_data_rows):
+    """
+    Test __getitem__ dunder method
+    """
+    with pytest.raises(KeyError):
+        bad_id = uuid.uuid4()
+        _ = registry_obj[bad_id]
+
+    registry_obj.add(temp_data_rows)
+
+
+#     df = registry_obj.to_dataframe()
+#     ids = df["id"].tolist()
+#     for i in ids:
+#         entity = registry_obj[i]
+#         variable = entity["variable"]
+#         intvar = int(variable.replace("var", ""))
+#         assert  intvar == entity["value"]
+
+
+def test_iter(registry_obj, temp_data_rows):
     """
     Test iter dunder method
     """
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     for i, row in enumerate(registry_obj):
         assert row["value"] == temp_data_rows[i]["value"]
         assert row["variable"].decode("utf-8") == temp_data_rows[i]["variable"]
 
 
-def test_resolve_id(registry_obj, temp_data_rows, temp_registry_schema):
+def test_resolve_ids(registry_obj, temp_data_rows, temp_registry_schema):
     """
-    Test contains as a dunder method
+    Test contains dunder method
     """
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
-    registry_obj.add(temp_data_rows, temp_registry_schema)
-    reg_id = registry_obj.resolve_id(labs[0])
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
+    registry_obj.add(temp_data_rows)
+    reg_id = registry_obj.resolve_ids(labs[0])
     assert reg_id is not None
-    reg_ids = registry_obj.resolve_id(labs)
+    reg_ids = registry_obj.resolve_ids(labs)
     ids = []
     for i, row in enumerate(registry_obj):
         reg_ids[i] = row["id"]
         ids.append(row["id"])
 
     # test to make sure missing labels return missing field
-    id = registry_obj.resolve_id("foo", missing=None)
+    id = registry_obj.resolve_ids("foo", missing=None)
 
     assert id is None
 
     # #ensure lookup only returns the active label
     # registry_obj.add(temp_data_rows, temp_registry_schema, activate_new=False)
-    # ids = registry_obj.resolve_id(labs)
+    # ids = registry_obj.resolve_ids(labs)
     # assert len(ids) ==len(temp_data_rows)
     # assert ids[0] == id
 
 
-def test_resolve_label(registry_obj, temp_data_rows, temp_registry_schema):
+def test_resolve_labels(registry_obj, temp_data_rows, temp_registry_schema):
     """
     Test contains as a dunder method
     """
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     ids = [row["id"] for row in registry_obj]
 
-    reg_labels = registry_obj.resolve_label(ids)
+    reg_labels = registry_obj.resolve_labels(ids)
     for reg_label, lab in zip(reg_labels, labs):
         assert reg_label == lab
 
     # test to make sure missing labels return missing field
-    reg_label = registry_obj.resolve_label(uuid.uuid4(), missing=None)
+    reg_label = registry_obj.resolve_labels(uuid.uuid4(), missing=None)
     assert reg_label is None
 
-    reg_label = registry_obj.resolve_label(str(uuid.uuid4()), missing=None)
+    reg_label = registry_obj.resolve_labels(str(uuid.uuid4()), missing=None)
     assert reg_label is None
 
     # ensure resolve only returns the active label
-    registry_obj.add(temp_data_rows, temp_registry_schema, activate_new=False)
-    reg_labels = registry_obj.resolve_label(ids)
+    registry_obj.add(temp_data_rows, activate_new=False)
+    reg_labels = registry_obj.resolve_labels(ids)
     assert len(labs) == len(reg_labels)
     assert labs[0] == reg_labels[0]
 
 
 def test_activate_ids(registry_obj, temp_data_rows, temp_registry_schema):
 
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
-    first_ids = registry_obj.resolve_id(labs)
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
+    first_ids = registry_obj.resolve_ids(labs)
+    registry_obj.add(temp_data_rows)
     ids = [row["id"] for row in registry_obj]
     ids = ids[::-1]
     activate_ids = ids[: len(temp_data_rows)]
@@ -311,18 +305,15 @@ def test_activate_ids(registry_obj, temp_data_rows, temp_registry_schema):
 
 
 def test_deactivate_ids(registry_obj, temp_data_rows, temp_registry_schema):
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
-    first_ids = registry_obj.resolve_id(labs)
+    registry_obj.add(temp_data_rows)
+    first_ids = registry_obj.resolve_ids(labs)
     registry_obj.deactivate_ids(first_ids)
     df = registry_obj.to_dataframe()
     assert np.sum(df["active"]) == 0
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     df = registry_obj.to_dataframe()
     assert np.sum(df["active"]) == len(temp_data_rows)
 
@@ -333,22 +324,20 @@ def test_deactivate_ids(registry_obj, temp_data_rows, temp_registry_schema):
 
 
 def test_deactivate_ids(registry_obj, temp_data_rows, temp_registry_schema):
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
-    first_ids = registry_obj.resolve_id(labs)
+    registry_obj.add(temp_data_rows)
+    first_ids = registry_obj.resolve_ids(labs)
     registry_obj.deactivate_ids(first_ids)
     df = registry_obj.to_dataframe()
     assert np.sum(df["active"]) == 0
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     df = registry_obj.to_dataframe()
     assert np.sum(df["active"]) == len(temp_data_rows)
 
-    registry_obj.deactivate_ids(first_ids)
+    with pytest.warns(UserWarning):
+        registry_obj.deactivate_ids(first_ids, warn_missing=True)
     df = registry_obj.to_dataframe()
     assert np.sum(df["active"]) == len(temp_data_rows)
     registry_obj.validate()
@@ -366,14 +355,11 @@ def test_deactivate_ids(registry_obj, temp_data_rows, temp_registry_schema):
 
 def test_activate_ids(registry_obj, temp_data_rows, temp_registry_schema):
 
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
-    first_ids = registry_obj.resolve_id(labs)
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
+    first_ids = registry_obj.resolve_ids(labs)
+    registry_obj.add(temp_data_rows)
     ids = [row["id"] for row in registry_obj]
     ids = ids[::-1]
     activate_ids = ids[: len(temp_data_rows)]
@@ -393,12 +379,9 @@ def test_activate_ids(registry_obj, temp_data_rows, temp_registry_schema):
 
 
 def test_deactivate_labels(registry_obj, temp_data_rows, temp_registry_schema):
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     df = registry_obj.to_dataframe()
     assert np.sum(df["active"]) == len(temp_data_rows)
 
@@ -417,15 +400,12 @@ def test_deactivate_labels(registry_obj, temp_data_rows, temp_registry_schema):
 
 def test_activate_labels(registry_obj, temp_data_rows, temp_registry_schema):
 
-    labs = [
-        temp_registry_schema["label_normalizer"](mydict["variable"])
-        for mydict in temp_data_rows
-    ]
+    labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
     with pytest.warns(UserWarning):
         registry_obj.activate_labels(["var10"], warn_missing=True)
 
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
     df = registry_obj.to_dataframe()
     assert df["active"].sum() == len(temp_data_rows)
 
@@ -436,7 +416,7 @@ def test_activate_labels(registry_obj, temp_data_rows, temp_registry_schema):
     registry_obj.activate_labels(labs)
     df = registry_obj.to_dataframe()
     assert df["active"].sum() == len(temp_data_rows)
-    registry_obj.add(temp_data_rows, temp_registry_schema)
+    registry_obj.add(temp_data_rows)
 
     # check that the newest labels are activated
     registry_obj.activate_labels(labs, activate_newest=True)
@@ -453,3 +433,69 @@ def test_activate_labels(registry_obj, temp_data_rows, temp_registry_schema):
         registry_obj.activate_labels([i for i in range(5)])
 
     registry_obj.validate()
+
+
+def test_update_registry_items(registry_obj, temp_data_rows):
+    """Test editable and only editable metadata data fields are updated."""
+    registry_obj.add(temp_data_rows)
+
+    df = registry_obj.to_dataframe()
+    ids = df["id"].to_numpy()
+    # ids = registry_obj.resolve_labels(labs)
+
+    updates = [{"id": i, "value": 5} for i in ids]
+
+    registry_obj.update(updates)
+    df = registry_obj.to_dataframe()
+    values = df["value"].to_numpy()
+    assert np.all(values == 5)
+
+    # test the size of the registy  hasn't changed
+    assert len(registry_obj) == len(temp_data_rows)
+
+    key = uuid.uuid4()
+    print(f"fake key: {key}")
+    bad_id_update = [{"id": key, "value": 5}]
+    non_editable_field_update = [{"id": ids[0], "label": "foo", "value": 10}]
+    label_from_field_update = [{"id": ids[0], "variable": "foo"}]
+    with pytest.warns(UserWarning):
+        registry_obj.update(bad_id_update, warn_missing=True)
+        registry_obj.update(non_editable_field_update, warn_missing=False)
+        registry_obj.update(label_from_field_update, warn_missing=False)
+
+    # check that the value was updated but the label wasn't
+    row_dict = registry_obj[ids[0]]
+    assert row_dict["value"] == 10
+    # test
+    missing_update = [{"value": 5}]
+    with pytest.raises(ValueError):
+        registry_obj.update(missing_update, warn_missing=True)
+
+    # with pytest.raises(KeyError):
+    #     registry_obj.update(missing_update, temp_registry_schema, warn_missing=True)
+
+    # registry_obj.update(updates, temp_registry_schema)
+
+    # assert len(registry_obj) == len(temp_data_rows)
+    # assert not registry_obj._cache_valid
+
+    # registry_obj.validate()
+    # ids = registry_obj.resolve_ids(labs)
+    # assert len(ids) == len(temp_data_rows)
+    # disk_labels = registry_obj.resolve_labels(ids)
+    # assert len(ids) == len(labs)
+    # assert len(disk_labels) == len(temp_data_rows)
+    # assert set(disk_labels) == set(labs)
+
+    # # check that all the labels have been activated
+    # df = registry_obj.get(labs, by="label", mode="non_active")
+    # assert df.shape[0] == 0
+
+    # df = registry_obj.get(labs, by="label", mode="all")
+    # assert np.all(df["active"])
+    # assert df.shape[0] == len(registry_obj)
+
+    # # should return only 1 row with the "value" stored as 0 on disk
+    # df = registry_obj.get("var0", by="label")
+    # assert df.shape[0] == 1
+    # assert df["value"][0] == 0

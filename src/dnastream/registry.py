@@ -326,7 +326,9 @@ class Registry(H5Dataset):
             if idx is None:
 
                 if warn_missing:
-                    self._warn_missing([rid], mode="all")
+
+                    self._warn_missing([rid])
+
                 continue
 
             rec = self._row(idx)
@@ -1431,8 +1433,6 @@ class Registry(H5Dataset):
         return {k: np.asarray(v, dtype=object) for k, v in out_lists.items()}
 
     def _warn_missing(self, missing_items) -> None:
-
-        missing_items = list(missing_items)
 
         if len(missing_items) == 0:
             return

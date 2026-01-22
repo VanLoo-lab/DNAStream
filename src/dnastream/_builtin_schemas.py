@@ -1,10 +1,30 @@
 import re
 import h5py
 import numpy as np
-import hashlib
-import json
+from .schema import Schema, Field
 
 SCHEMA_VERSION = "0.1.0"
+
+
+STR_DTYPE = h5py.string_dtype("utf-8")
+
+
+def str_validator(x):
+    pass
+
+
+REGISTRY_SPINE = (
+    Field("id", STR_DTYPE, True, None),  # UUIDv4 string
+    Field("label", STR_DTYPE, True, None),  # user-facing unique key
+    Field("idx", np.int64, True, None),
+    Field("active", np.bool_, True, None),
+    Field("created_at", STR_DTYPE, True, None),  # ISO8601 Z
+    Field("created_by", STR_DTYPE, True, None),
+    Field("modified_at", STR_DTYPE, True, None),  # ISO8601 Z
+    Field("modified_by", STR_DTYPE, True, None),
+)
+
+
 """
 Metadata schema for a sequencing sample.
 
@@ -46,38 +66,46 @@ date_of_sequencing : str
     Date the sample was sequenced (e.g., '2023-06-15').
 """
 
-STR_DTYPE = h5py.string_dtype("utf-8")
 
-REGISTRY_SPINE = (
-    ("id", STR_DTYPE),  # UUIDv4 string
-    ("label", STR_DTYPE),  # user-facing unique key
-    ("idx", np.int64),
-    ("active", np.bool_),
-    ("created_at", STR_DTYPE),  # ISO8601 Z
-    ("created_by", STR_DTYPE),
-    ("modified_at", STR_DTYPE),  # ISO8601 Z
-    ("modified_by", STR_DTYPE),
+SAMPLE_REGISTRY_FIELDS = REGISTRY_SPINE + (
+    Field(
+        "sample_name",
+        STR_DTYPE,
+        True,
+        str_validator,
+    ),
+    Field("organism", STR_DTYPE, str_validator),
+    Field("library_strategy", STR_DTYPE, str_validator),
+    Field("library_source", STR_DTYPE, str_validator),
+    Field("library_selection", STR_DTYPE, str_validator),
+    Field("library_layout", "S10"),
+    Field("platform", STR_DTYPE, str_validator),
+    Field("model", STR_DTYPE, str_validator),
+    Field("center_name", STR_DTYPE, str_validator),
+    Field("run", STR_DTYPE, str_validator),
+    Field("study", STR_DTYPE, str_validator),
+    Field("coverage", "f4"),
+    Field("modality", STR_DTYPE, str_validator),
+    Field("location", STR_DTYPE, str_validator),
+    Field("bam_file_path", STR_DTYPE, str_validator),
+    Field("batch_id", STR_DTYPE, str_validator),
+    Field("reference_build", STR_DTYPE, str_validator),
+    Field("date_of_sequencing", STR_DTYPE, str_validator),
 )
 
-SAMPLE_REGISTRY_DTYPE_SPEC = REGISTRY_SPINE + (
-    ("sample_name", STR_DTYPE),
-    ("organism", STR_DTYPE),
-    ("library_strategy", STR_DTYPE),
-    ("library_source", STR_DTYPE),
-    ("library_selection", STR_DTYPE),
-    ("library_layout", "S10"),
-    ("platform", STR_DTYPE),
-    ("model", STR_DTYPE),
-    ("center_name", STR_DTYPE),
-    ("run", STR_DTYPE),
-    ("study", STR_DTYPE),
-    ("coverage", "f4"),
-    ("modality", STR_DTYPE),
-    ("location", STR_DTYPE),
-    ("bam_file_path", STR_DTYPE),
-    ("batch_id", STR_DTYPE),
-    ("reference_build", STR_DTYPE),
-    ("date_of_sequencing", STR_DTYPE),
+
+def builder_sample_label(sample_name: str) -> str:
+    s = str(sample_name).strip()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+
+SAMPLE_SCHEMA = Schema(
+    fields=SAMPLE_REGISTRY_FIELDS,
+    version=SCHEMA_VERSION,
+    label_from=("sample_name",),
+    label_required=True,
+    label_builder=builder_sample_label,
 )
 
 
@@ -111,71 +139,20 @@ dbsnp_id : str
 info : str
     Additional metadata (e.g., from INFO field in VCF/MAF).
 """
-VARIANT_REGISTRY_DTYPE_SPEC = REGISTRY_SPINE + (
-    ("chrom", STR_DTYPE),
-    ("start_pos", "i8"),
-    ("end_pos", "i8"),
-    ("ref_allele", STR_DTYPE),
-    ("alt_allele", STR_DTYPE),
-    ("hugo", STR_DTYPE),
-    ("entrez_gene_id", STR_DTYPE),
-    ("variant_classification", STR_DTYPE),
-    ("variant_type", "S10"),
-    ("dbsnp_id", STR_DTYPE),
-    ("filter", STR_DTYPE),
-    ("info", STR_DTYPE),
+VARIANT_REGISTRY_FIELDS = REGISTRY_SPINE + (
+    Field("chrom", STR_DTYPE, False, str_validator),
+    Field("start_pos", "i8", False),
+    Field("end_pos", "i8", False),
+    Field("ref_allele", STR_DTYPE, False, str_validator),
+    Field("alt_allele", STR_DTYPE, False, str_validator),
+    Field("hugo", STR_DTYPE, False, str_validator),
+    Field("entrez_gene_id", STR_DTYPE, False, str_validator),
+    Field("variant_classification", STR_DTYPE, False, str_validator),
+    Field("variant_type", STR_DTYPE, False, str_validator),
+    Field("dbsnp_id", STR_DTYPE, False, str_validator),
+    Field("filter", STR_DTYPE, False, str_validator),
+    Field("info", STR_DTYPE, False, str_validator),
 )
-
-
-def dtype_from(spec):
-    return np.dtype(list(spec))
-
-
-def columns_from(spec):
-    return [k for k, _ in spec]
-
-
-def schema_hash(spec):
-    payload = json.dumps(
-        [(k, str(v)) for k, v in spec],
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
-def compile_schema(
-    spec,
-    *,
-    label_from=None,
-    label_normalizer=None,
-    label_required: bool = False,
-):
-    spec = tuple(spec)
-
-    if label_from is not None:
-        if isinstance(label_from, (list, tuple)):
-            label_from = tuple(label_from)
-        else:
-            raise TypeError("label_from must be a tuple/list of field names or None")
-
-    return {
-        "spec": spec,
-        "dtype": dtype_from(spec),
-        "columns": columns_from(spec),
-        "schema_pairs": [(k, str(v)) for k, v in spec],
-        "schema_hash": schema_hash(spec),
-        "schema_version": SCHEMA_VERSION,
-        "label_from": label_from,
-        "label_normalizer": label_normalizer,
-        "label_required": bool(label_required),
-    }
-
-
-def normalize_sample_label(sample_name: str) -> str:
-    s = str(sample_name).strip()
-    s = re.sub(r"\s+", " ", s)
-    return s
 
 
 def normalize_chrom(chrom: str) -> str:
@@ -187,7 +164,7 @@ def normalize_chrom(chrom: str) -> str:
     return f"chr{c}"
 
 
-def normalize_variant_label(chrom, start_pos, ref_allele, alt_allele) -> str:
+def build_variant_label(chrom, start_pos, ref_allele, alt_allele) -> str:
     c = normalize_chrom(chrom)
     pos = int(start_pos)
     ref = str(ref_allele).strip().upper()
@@ -197,35 +174,41 @@ def normalize_variant_label(chrom, start_pos, ref_allele, alt_allele) -> str:
     return f"{c}:{pos}:{ref}:{alt}"
 
 
-SAMPLE_REGISTRY = compile_schema(
-    SAMPLE_REGISTRY_DTYPE_SPEC,
-    label_from=("sample_name",),  # fields used to compute label
-    label_normalizer=normalize_sample_label,
-    label_required=True,
-)
-
-VARIANT_REGISTRY = compile_schema(
-    VARIANT_REGISTRY_DTYPE_SPEC,
+VARIANT_SCHEMA = Schema(
+    VARIANT_REGISTRY_FIELDS,
+    version=SCHEMA_VERSION,
     label_from=("chrom", "start_pos", "ref_allele", "alt_allele"),
-    label_normalizer=normalize_variant_label,
+    label_builder=build_variant_label,
     label_required=True,
+    label_normalizer=None,
 )
 
 
-REGISTRIES = {"sample": SAMPLE_REGISTRY, "variant": VARIANT_REGISTRY}
+SNP_FIELDS = REGISTRY_SPINE + (
+    Field("chrom", "S10", True, STR_DTYPE),
+    Field("start_pos", "i8", True, STR_DTYPE),
+    Field("ref_allele", "S10", True, STR_DTYPE),
+    Field("alt_allele", "S10", True, STR_DTYPE),
+    Field("dbsnp_id", "S20", False, STR_DTYPE),
+    Field("strand", "S1", False, None),  # + or -
+)
+
+SNP_SCHEMA = Schema(
+    SNP_FIELDS,
+    version=SCHEMA_VERSION,
+    label_from=("chrom", "start_pos", "ref_allele", "alt_allele"),
+    label_builder=build_variant_label,
+    label_required=True,
+    label_normalizer=None,
+)
+
+# lambda x: raise ValueError("strand must be either + or -") if x not in {"+", "-"}
+
+
+REGISTRIES = {"sample": SAMPLE_SCHEMA, "variant": VARIANT_SCHEMA, "snp": SNP_SCHEMA}
 
 
 # annotation
-
-
-# SNP_DTYPE = np.dtype([
-#     ("chrom", "S10"),
-#     ("position", "i8"),
-#     ("ref_allele", "S10"),
-#     ("alt_allele", "S10"),
-#     ("dbsnp_id", "S20"),
-#     ("strand", "S1"),  # + or -
-# ])
 
 
 #    ("pipeline_version", "S20"),
