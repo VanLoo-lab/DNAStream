@@ -5,8 +5,8 @@ import socket
 from datetime import datetime, timezone
 import uuid
 from .registry import Registry
-from ._builtin_schemas import SCHEMA_VERSION, REGISTRIES
-
+from ._builtin_schemas import REGISTRY_SCHEMAS
+from .io import IO
 import logging
 
 
@@ -28,6 +28,8 @@ class DNAStream:
         self._handle = None
 
         self._registries = {}
+
+        self.io = IO(self)
         self.verbose = verbose
 
         logging.basicConfig(
@@ -57,6 +59,37 @@ class DNAStream:
         mystr += f"Mode: {self.mode}"
 
         return mystr
+
+    def __getattr__(self, name: str):
+        # Allow access like ds.sample / ds.variant
+        if name in REGISTRY_SCHEMAS:
+            if not self.is_connected():
+                raise RuntimeError(
+                    "DNAStream is not connected. Call connect() before accessing registries."
+                )
+            return self.registry(name)
+        raise AttributeError(name)
+
+    def connect(self):
+
+        if self.is_connected():
+            return
+
+        if self.mode in ("r", "r+"):
+            self._validate_path(self.path)
+
+        self._handle = h5py.File(self.path, self.mode)
+
+        if self.mode == "x":
+            self._initialize_new_file()
+        else:
+            self._validate_header()
+
+        # Ensure registry wrappers are available for ds.<registry_name> access
+        self._load_registries(strict=True)
+
+        if self.verbose:
+            self.logger.info(f"DNAStreaming file {self.path}")
 
     @staticmethod
     def _validate_mode(mode):
@@ -91,24 +124,6 @@ class DNAStream:
         if not os.path.isfile(path):
             raise FileNotFoundError(f"HDF5 file '{path}' does not exist.")
 
-    def connect(self):
-
-        if self.is_connected():
-            return
-
-        if self.mode in ("r", "r+"):
-            self._validate_path(self.path)
-
-        self._handle = h5py.File(self.path, self.mode)
-
-        if self.mode == "x":
-            self._initialize_new_file()
-        else:
-            self._validate_header()
-
-        if self.verbose:
-            self.logger.info(f"streaming file {self.path}")
-
     @property
     def handle(self):
         """Return the live HDF5 handle; raise if not connected."""
@@ -140,6 +155,31 @@ class DNAStream:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+    def _load_registries(self, *, strict: bool = True) -> None:
+        """Bind Registry wrappers for all known registries.
+
+        For new files (mode 'x'), this will create any missing registry datasets.
+        For existing files (modes 'r'/'r+'), this requires the datasets to exist.
+        """
+        reg_grp = self.handle.require_group("registry")
+
+        for key, schema in REGISTRY_SCHEMAS.items():
+            reg = Registry(reg_grp, key)
+
+            if key in reg_grp:
+                # Existing dataset: open + validate schema identity
+                reg.open(schema, strict=strict)
+            else:
+                # Missing dataset: only allowed when creating a new file
+                if self.mode == "x":
+                    reg.create(schema)
+                else:
+                    raise ValueError(
+                        f"DNAStream file is missing required registry '/registry/{key}'."
+                    )
+
+            self._registries[key] = reg
+
     def _initialize_new_file(self):
         """Initialize a new DNAStream file (mode 'x')."""
 
@@ -149,7 +189,8 @@ class DNAStream:
 
         # Required file-level attributes
         self.handle.attrs["dnastream_format"] = "DNAStream"
-        self.handle.attrs["schema_version"] = schema.SCHEMA_VERSION
+        self.handle.attrs["schema_version"] = PACKAGE_VERSION
+        # self.handle.attrs["package_version"] = PACKAGE_VERSION
         self.handle.attrs["created_by"] = getpass.getuser()
         self.handle.attrs["created_on_host"] = socket.gethostname()
         self.handle.attrs["created_at"] = (
@@ -180,9 +221,8 @@ class DNAStream:
         self.handle["provenance"].require_group("runs")
         self.handle["provenance"].require_group("changes")
 
-        self._create_registries()
-
-        # create built in registries
+        # create registries
+        self._load_registries(strict=True)
 
     def set_patient_id(self, patient_id):
         self.handle.attrs["patient_id"] = str(patient_id)
@@ -190,12 +230,6 @@ class DNAStream:
     @property
     def patient_id(self):
         return self.handle.attrs["patient_id"]
-
-    def _create_registries(self):
-        for name, registry_schema in schema.REGISTRIES.items():
-            Registry(self.handle, name).create(
-                registry_schema, shape=(0,), maxshape=(None,)
-            )
 
     def _validate_header(self):
         """Validate that this is DNAStream file before modification or reading."""
@@ -210,17 +244,9 @@ class DNAStream:
             )
 
     def _handle_provider(self):
-        return self._handle if self._is_connected() else None
+        return self._handle if self.is_connected() else None
 
     def registry(self, name: str) -> Registry:
         if name not in self._registries:
-            self._registries[name] = Registry(self._handle_provider, name)
+            raise KeyError(f"Registry with key '{name}' does not exist.")
         return self._registries[name]
-
-    @property
-    def sample_registry(self):
-        return self.registry("sample")
-
-    @property
-    def variant_registry(self):
-        return self.registry("variant")

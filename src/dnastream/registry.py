@@ -22,7 +22,7 @@ from .schema import Schema
 
 _VALID_MODES = {"active_only", "all", "non_active"}
 _BY_OPTIONS = {"label", "id"}
-_REGISTRY_SPINE = {
+_REGISTRY_SPINE = (
     "active",
     "id",
     "idx",
@@ -31,7 +31,7 @@ _REGISTRY_SPINE = {
     "created_by",
     "modified_by",
     "modified_at",
-}
+)
 _LABEL_SCALARS = (str, bytes, np.str_, np.bytes_)  # allow only label-ish things
 _ID_SCALARS = (str, bytes, np.str_, np.bytes_, uuid.UUID)
 # _STRLIKE = (str, bytes, np.str_, np.bytes_)
@@ -179,6 +179,17 @@ class Registry(H5Dataset):
 
         return out
 
+    @property
+    def columns(self) -> tuple[str, ...]:
+        ds = self.open()
+        return tuple(ds.dtype.names or ())
+
+    @property
+    def fields(self) -> tuple[str, ...]:
+        cols = self.columns
+        spine = set(_REGISTRY_SPINE)
+        return tuple(c for c in cols if c not in spine)
+
     def add(self, rows: list[dict], activate_new: bool = True) -> None:
         """Append rows to the registry (append-only insert).
 
@@ -234,7 +245,7 @@ class Registry(H5Dataset):
 
         collisions: list[tuple[int, int]] = []
         if labels is not None:
-            collisions = self._detect_label_collisons(labels, active_only=True)
+            collisions = self._detect_label_collisions(labels, active_only=True)
 
         protected = set(_REGISTRY_SPINE)
 
@@ -257,9 +268,7 @@ class Registry(H5Dataset):
         block["created_by"] = user
         block["modified_at"] = now
         block["modified_by"] = user
-
-        if "idx" in names:
-            block["idx"] = np.arange(n0, n0 + n_add)
+        block["idx"] = np.arange(n0, n0 + n_add)
 
         # Apply collision policy
         if collisions:
@@ -305,7 +314,7 @@ class Registry(H5Dataset):
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         user = getpass.getuser()
 
-        non_editable = _REGISTRY_SPINE
+        non_editable = set(_REGISTRY_SPINE)
         if self.schema.label_from is not None:
             non_editable |= set(self.schema.label_from)
 
@@ -605,7 +614,7 @@ class Registry(H5Dataset):
 
         # registry spine are required fields for any registyr
 
-        missing_fields = _REGISTRY_SPINE - names
+        missing_fields = set(_REGISTRY_SPINE) - names
         if missing_fields:
             errors.append(f"Missing required field(s): {sorted(missing_fields)}")
 
@@ -883,7 +892,7 @@ class Registry(H5Dataset):
         ds = self._ds()
         names = ds.dtype.names
 
-        required = _REGISTRY_SPINE
+        required = set(_REGISTRY_SPINE)
         missing = required - set(names)
         if missing:
             raise ValueError(
@@ -902,21 +911,23 @@ class Registry(H5Dataset):
         label_to_idx = {}
 
         for lab, rid, idx, ok in zip(labels, ids, idxs, active):
-            if not ok:
-                continue
+
             labn = norm_key(lab)
             ridn = norm_key(rid)
-            if ok and labn in label_to_idx:
-                raise ValueError(
-                    f"Duplicate active label '{labn}' in registry '{self.name}'"
-                )
+
             if ridn in id_to_idx:
                 raise ValueError(f"Duplicate id '{ridn}' in registry '{self.name}'")
-            if ok:
-                label_to_idx[labn] = int(idx)
-                label_to_id[labn] = ridn
+
             id_to_idx[ridn] = int(idx)
             id_to_label[ridn] = labn
+
+            if ok:
+                if labn in label_to_idx:
+                    raise ValueError(
+                        f"Duplicate active label '{labn}' in registry '{self.name}'"
+                    )
+                label_to_idx[labn] = int(idx)
+                label_to_id[labn] = ridn
 
         self._label_to_id = label_to_id
         self._label_to_idx = label_to_idx
@@ -952,13 +963,11 @@ class Registry(H5Dataset):
         if active is None:
             return
 
-        if len(indices) == 0:
-            return
-
         # h5py: make scalar index work with fancy indexing
         _, idx = self._normalize_selector(indices, scalar_types=(int, np.integer))
 
-        # ensure indices are sorted
+        if len(idx) == 0:
+            return
 
         idx = np.sort(np.asarray(idx, np.int64))
 
@@ -1037,46 +1046,21 @@ class Registry(H5Dataset):
 
     #     return labels
 
-    def _detect_label_collisons(
+    def _detect_label_collisions(
         self,
         labels: list[str] | None,
         *,
         active_only: bool = True,
     ) -> list[tuple[int, int]]:
-        """Detect label collisions between incoming rows and existing registry entries.
-
-        Parameters
-        ----------
-        labels : list[str] or None
-            Proposed labels for the incoming rows. If None, returns an empty list.
-        active_only : bool, optional
-            If True (default), only consider existing rows with ``active == True``
-            when checking for collisions.
-
-        Returns
-        -------
-        list[tuple[int, int]]
-            List of ``(new_row_idx, existing_row_idx)`` pairs for each incoming label
-            that collides with an existing label.
-
-        Raises
-        ------
-        ValueError
-            If duplicate labels are present within the incoming batch, or if the
-            registry contains multiple active rows with the same label.
-
-        Notes
-        -----
-        This method does not mutate registry state.
-        """
         if labels is None:
             return []
 
-        # 1) duplicates within incoming batch are ambiguous raise Value Error
-        if len(set(labels)) != len(labels):
+        # Normalize first; duplicates should be defined on normalized keys
+        labels_norm = [norm_key(as_str(lab)) for lab in labels]
+        if len(set(labels_norm)) != len(labels_norm):
             raise ValueError(
-                f"Duplicate labels supplied in input data. "
-                f"Check registry '{self._name}' schema for label definitions."
+                "Duplicate labels supplied in input data (after normalization). "
+                f"Check registry '{self.name}' schema for label definitions."
             )
 
         ds = self._ds()
@@ -1084,32 +1068,39 @@ class Registry(H5Dataset):
             return []
 
         names = ds.dtype.names
-        have_active = "active" in names
+        if "label" not in names:
+            raise ValueError(f"Registry '{self.name}' missing required field 'label'.")
 
         existing_labels = ds["label"][:]
-        if active_only and have_active:
+
+        if active_only:
+            # spine guarantees active exists; fail loudly if not
+            if "active" not in names:
+                raise ValueError(
+                    f"Registry '{self.name}' missing required field 'active'."
+                )
             active_mask = ds["active"][:].astype(bool)
         else:
-            active_mask = np.ones(ds.shape[0], dtype=bool)
+            active_mask = None
 
-        # 2) Build label -> existing index mapping for considered rows
+        # Build label -> existing row index mapping
+        # - active_only=True: duplicates are a registry invariant violation
+        # - active_only=False: duplicates are history; keep newest row index
         existing_index: dict[str, int] = {}
-        for i, (lab, is_active) in enumerate(zip(existing_labels, active_mask)):
-            if not is_active:
+        for i, lab in enumerate(existing_labels):
+            if active_mask is not None and not bool(active_mask[i]):
                 continue
-            s = lab.decode("utf-8") if isinstance(lab, (bytes, np.bytes_)) else str(lab)
+            key = norm_key(as_str(lab))
 
-            if s in existing_index:
-                # two active rows with same label = data integrity bug
+            if active_only and key in existing_index:
                 raise ValueError(
-                    f"Registry '{self._name}' contains multiple active rows with label '{s}'."
+                    f"Registry '{self.name}' contains multiple active rows with label '{key}'."
                 )
-            existing_index[s] = i
 
-        # 3) Return collision pairs
+            existing_index[key] = i  # newest wins (esp. for history mode)
+
         collisions: list[tuple[int, int]] = []
-        for new_i, lab in enumerate(labels):
-            key = str(lab)
+        for new_i, key in enumerate(labels_norm):
             old_i = existing_index.get(key)
             if old_i is not None:
                 collisions.append((new_i, old_i))
@@ -1253,64 +1244,82 @@ class Registry(H5Dataset):
         mode = self._validate_mode(mode)
         by = self._validate_by(by)
 
-        if len(selector) == 0:
-            return np.asarray([], dtype=int)
-
         # Ensure caches exist for this view. Note: id->idx is valid in any mode.
         self._load_cache()
         ds = self._ds()
 
+        def _empty() -> np.ndarray:
+            return np.asarray([], dtype=np.int64)
+
+        def _unique_int(x) -> np.ndarray:
+            if x is None:
+                return _empty()
+            arr = np.asarray(x, dtype=np.int64)
+            if arr.size == 0:
+                return _empty()
+            return np.unique(arr)
+
         # ---- by == 'id' -------------------------------------------------
         if by == "id":
+            _, sel = self._validate_id_selector(selector)
             idx = self._resolve_from_map(
-                selector,
+                sel,
                 self._id_to_idx,
                 missing=missing,
                 key_norm=norm_key,
             )
             idx = np.asarray(idx, dtype=object)
             miss_mask = pd.isna(idx)
-            if warn_missing:
-                self._warn_missing(
-                    [req for req, m in zip(selector, miss_mask.tolist()) if m]
-                )
-            all = idx[~miss_mask].astype(int)
-            if mode == "all":
 
-                return np.unique(all)
-            elif mode == "active_only":
-                mask = ds["active"]
-                return np.unique(all[mask])
-            else:  # non-active
-                mask = ~ds["active"]
-                return np.unique(all[mask])
+            if warn_missing and miss_mask.size:
+                self._warn_missing(
+                    [req for req, m in zip(sel, miss_mask.tolist()) if m]
+                )
+
+            all_idx = idx[~miss_mask].astype(np.int64)
+            if all_idx.size == 0:
+                return _empty()
+
+            if mode == "all":
+                return _unique_int(all_idx)
+
+            active_state = ds["active"][all_idx].astype(bool)
+            if mode == "active_only":
+                return _unique_int(all_idx[active_state])
+            else:  # non_active
+                return _unique_int(all_idx[~active_state])
 
         # ---- by == 'label' ----------------------------------------------
         # Fast path: active_only has unique label->idx cache
         if mode == "active_only":
+            _, sel = self._validate_label_selector(selector)
             idx = self._resolve_from_map(
-                selector,
+                sel,
                 self._label_to_idx,
                 missing=missing,
                 key_norm=norm_key,
             )
             idx = np.asarray(idx, dtype=object)
             miss_mask = pd.isna(idx)
-            if warn_missing:
+
+            if warn_missing and miss_mask.size:
                 self._warn_missing(
-                    [req for req, m in zip(selector, miss_mask.tolist()) if m]
+                    [req for req, m in zip(sel, miss_mask.tolist()) if m]
                 )
-            out = idx[~miss_mask].astype(int)
-            return np.unique(out)
 
-        # History modes: allow duplicates. Use scan-based find_rows.
-        want = [norm_key(x) for x in selector]
-        print(want)
+            out = idx[~miss_mask].astype(np.int64)
+            return _unique_int(out)
+
+        # History modes: labels may map to multiple rows.
+        _, sel = self._validate_label_selector(selector)
+        want = [norm_key(x) for x in sel]
         hits = self._find_multiple(want, mode=mode, return_field="idx")
-        missing = [lab for lab, arr in hits.items() if arr is None or len(arr) == 0]
 
+        missing_labels = [
+            lab for lab, arr in hits.items() if arr is None or len(arr) == 0
+        ]
         if warn_missing:
-            self._warn_missing(sorted(missing))
+            self._warn_missing(sorted(missing_labels))
 
         if allow_many:
             flat: list[int] = []
@@ -1318,13 +1327,13 @@ class Registry(H5Dataset):
                 if arr is None:
                     continue
                 flat.extend([int(i) for i in np.asarray(arr, dtype=object).tolist()])
-            if not flat:
-                return np.asarray([], dtype=int)
-            return np.unique(np.asarray(flat, dtype=int))
+            return _unique_int(flat)
 
         # allow_many=False: choose a single winner per label
         winners: list[int] = []
         for lab_norm, idxs_arr in hits.items():
+            if idxs_arr is None:
+                continue
             idxs = [int(i) for i in np.asarray(idxs_arr, dtype=object).tolist()]
             if len(idxs) == 0:
                 continue
@@ -1343,9 +1352,7 @@ class Registry(H5Dataset):
             else:
                 winners.append(int(max(idxs) if select_newest else min(idxs)))
 
-        if not winners:
-            return np.asarray([], dtype=int)
-        return np.unique(np.asarray(winners, dtype=int))
+        return _unique_int(winners)
 
     def _find_multiple(
         self,

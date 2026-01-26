@@ -205,7 +205,11 @@ SNP_SCHEMA = Schema(
 # lambda x: raise ValueError("strand must be either + or -") if x not in {"+", "-"}
 
 
-REGISTRIES = {"sample": SAMPLE_SCHEMA, "variant": VARIANT_SCHEMA, "snp": SNP_SCHEMA}
+REGISTRY_SCHEMAS = {
+    "sample": SAMPLE_SCHEMA,
+    "variant": VARIANT_SCHEMA,
+    "snp": SNP_SCHEMA,
+}
 
 
 # annotation

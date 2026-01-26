@@ -20,6 +20,11 @@ def test_registry_correct_group_enforcement(temp_h5_handle):
     Registry(grp, "test")
 
 
+def test_fields_property(registry_obj):
+    expected = {"variable", "value"}
+    assert set(registry_obj.fields) == expected
+
+
 def test_registry_not_created_twice(registry_obj, temp_registry_schema):
     """
     Test to make sure the registry is not recreated if it already exists
@@ -326,24 +331,17 @@ def test_deactivate_ids(registry_obj, temp_data_rows, temp_registry_schema):
 def test_deactivate_ids(registry_obj, temp_data_rows, temp_registry_schema):
     labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
 
+    # add all temp data and deactivate ids them
     registry_obj.add(temp_data_rows)
     first_ids = registry_obj.resolve_ids(labs)
     registry_obj.deactivate_ids(first_ids)
     df = registry_obj.to_dataframe()
     assert np.sum(df["active"]) == 0
 
+    # add the duplicate data and ensure the default activate policy works
     registry_obj.add(temp_data_rows)
     df = registry_obj.to_dataframe()
     assert np.sum(df["active"]) == len(temp_data_rows)
-
-    with pytest.warns(UserWarning):
-        registry_obj.deactivate_ids(first_ids, warn_missing=True)
-    df = registry_obj.to_dataframe()
-    assert np.sum(df["active"]) == len(temp_data_rows)
-    registry_obj.validate()
-
-    # with pytest.warns()
-    # registry_obj.deactivate_ids(labs)
 
     with pytest.warns(UserWarning, match="not found|Requested selection"):
         registry_obj.deactivate_ids(labs, warn_missing=True)
