@@ -5,6 +5,7 @@ from dnastream import DNAStream
 from dnastream.registry import Registry
 from dnastream.schema import Schema, Field
 import numpy as np
+from textwrap import dedent
 
 
 STR_DTYPE = h5py.string_dtype("utf-8")
@@ -20,12 +21,28 @@ REGISTRY_SPINE = (
     Field("modified_at", STR_DTYPE, True, None),  # ISO8601 Z
     Field("modified_by", STR_DTYPE, True, None),
 )
+_SPINE = {
+    "id",
+    "label",
+    "idx",
+    "active",
+    "created_at",
+    "created_by",
+    "modified_at",
+    "modified_by",
+}
 
 
 @pytest.fixture
 def temp_h5_file(tmp_path):
     """Path to a temporary HDF5 file for testing."""
     return tmp_path / "test.h5"
+
+
+@pytest.fixture
+def temp_csv_file(tmp_path):
+    """Path to a temporary HDF5 file for testing."""
+    return tmp_path / "test.csv"
 
 
 @pytest.fixture
@@ -103,6 +120,118 @@ def registry_obj(temp_h5_handle, temp_registry_schema):
     return reg
 
 
+@pytest.fixture
+def temp_maf(tmp_path, name="test.maf", rows=None):
+    path = tmp_path / name
+    header = [
+        "Chromosome",
+        "Start_Position",
+        "End_Position",
+        "Reference_Allele",
+        "Tumor_Seq_Allele2",
+        "Hugo_Symbol",
+        "Entrez_Gene_Id",
+        "Filter",
+        "Variant_Classification",
+        "Variant_Type",
+        "dbSNP_RS",
+    ]
+    if rows is None:
+        rows = [
+            [
+                "chr1",
+                "123",
+                "123",
+                "A",
+                "G",
+                "TP53",
+                "7157",
+                "PASS",
+                "Missense_Mutation",
+                "SNP",
+                "rs1",
+            ],
+            [
+                "chr2",
+                "456",
+                "456",
+                "C",
+                "T",
+                "EGFR",
+                "1956",
+                "PASS",
+                "Missense_Mutation",
+                "SNP",
+                "rs2",
+            ],
+        ]
+
+    lines = ["\t".join(header)] + ["\t".join(map(str, r)) for r in rows]
+    path.write_text("\n".join(lines) + "\n")
+
+    return path
+
+
+def _dtype_kind(dt):
+    # h5py.string_dtype ends up kind 'O' in numpy
+    try:
+        return np.dtype(dt).kind
+    except Exception:
+        return "O"
+
+
+@pytest.fixture
+def temp_sample_csv(dnastream_obj, tmp_path, name="samples.csv", rows=None):
+    path = tmp_path / name
+
+    # get the Schema object from the sample registry
+    schema = getattr(dnastream_obj.sample, "schema", None) or getattr(
+        dnastream_obj.sample, "_schema"
+    )
+    if schema is None:
+        raise RuntimeError(
+            "Couldn't find sample schema on dnastream_obj.sample (expected .schema or ._schema)"
+        )
+
+    # columns = all schema fields except registry spine
+    header = [f.name for f in schema.fields if f.name not in _SPINE]
+
+    # try to ensure the label_from fields exist and are set to something unique
+    label_from = tuple(schema.label_from or ())
+
+    if rows is None:
+        rows = []
+        for i in range(2):
+            row = {}
+            for f in schema.fields:
+                if f.name in _SPINE:
+                    continue
+                kind = _dtype_kind(f.dtype)
+                if kind in ("i", "u"):
+                    row[f.name] = i
+                elif kind == "f":
+                    row[f.name] = float(i)
+                elif kind == "b":
+                    row[f.name] = True  # or set explicitly per-test
+                else:
+                    row[f.name] = f"{f.name}_{i}"
+
+            # make label_from components nice + unique
+            for j, key in enumerate(label_from):
+                if key in row:
+                    row[key] = f"{key}{i}"
+
+            rows.append(row)
+
+    # write CSV
+    lines = [",".join(header)]
+    for r in rows:
+        lines.append(",".join(str(r.get(col, "")) for col in header))
+    path.write_text("\n".join(lines) + "\n")
+
+    return path
+
+
 # @pytest.fixture
 # def temp_h5_stream(temp_h5_file):
 #     """Fixture to create a temporary HDF5 file for testing."""
@@ -117,19 +246,6 @@ def registry_obj(temp_h5_handle, temp_registry_schema):
 #         )
 #         yield f
 #         f.close()
-
-
-# @pytest.fixture
-# def base_index(temp_h5_stream):
-#     """Fixture to create a BaseIndex instance."""
-
-#     yield LocalIndex(
-#         temp_h5_stream,
-#         name="index/SNV",
-#         metadata_dtype=VariantMetadata.get_dtype(),
-#         verbose=True,
-#         tracked_tables=[("read_counts", 0)],
-#     )
 
 
 # @pytest.fixture

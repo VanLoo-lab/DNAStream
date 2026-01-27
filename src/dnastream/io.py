@@ -19,7 +19,7 @@ from typing import Sequence, Mapping, Any, Optional, Literal
 import numpy as np
 from .registry import Registry
 
-from .utils import wrap_list, require_file_exists
+from .utils import wrap_list, require_file_exists_static
 
 
 _MAF_COLUMN_MAPPING = {
@@ -174,7 +174,7 @@ class IO:
             **kwargs,
         )
 
-    def add_sample_files(
+    def add_samples_from_files(
         self,
         fname: Sequence[str] | str,
         *,
@@ -244,7 +244,7 @@ class IO:
         return str(v)
 
     @staticmethod
-    @require_file_exists
+    @require_file_exists_static
     def _parse_file(
         fname,
         columns: Sequence[str],
@@ -277,6 +277,7 @@ class IO:
                     if colset is None or k in colset:
                         rec[k] = IO._coerce(k, v, schema)
                 rows.append(rec)
+
         return rows
 
     @staticmethod
@@ -295,6 +296,7 @@ class IO:
 
         rows: list[dict[str, Any]] = []
         for path in fnames:
+
             rows.extend(
                 IO._parse_file(
                     path,

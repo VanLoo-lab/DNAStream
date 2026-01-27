@@ -186,8 +186,16 @@ class Schema:
 
         parts = tuple(str(row[k]) for k in self.label_from)
 
-        builder = self.label_builder or (lambda xs: "|".join(xs))
-        label = builder(parts)
+        if self.label_builder is None:
+            label = "|".join(parts)
+        else:
+            if len(parts) > 1:
+                # Support both: label_builder(*parts) and label_builder(parts)
+
+                label = self.label_builder(*parts)
+            else:
+
+                label = self.label_builder(parts)
 
         if self.label_normalizer is not None:
             label = self.label_normalizer(label)

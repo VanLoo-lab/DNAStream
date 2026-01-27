@@ -134,3 +134,15 @@ def require_file_exists(func):
         return func(self, fname, *args, **kwargs)
 
     return wrapper
+
+
+def require_file_exists_static(func):
+    """Decorator to ensure input file exists before calling the function."""
+
+    @functools.wraps(func)
+    def wrapper(fname, *args, **kwargs):
+        if not os.path.isfile(fname):
+            raise FileNotFoundError(f"File '{fname}' does not exist.")
+        return func(fname, *args, **kwargs)
+
+    return wrapper

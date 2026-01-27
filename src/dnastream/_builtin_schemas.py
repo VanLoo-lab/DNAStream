@@ -152,6 +152,7 @@ VARIANT_REGISTRY_FIELDS = REGISTRY_SPINE + (
     Field("dbsnp_id", STR_DTYPE, False, str_validator),
     Field("filter", STR_DTYPE, False, str_validator),
     Field("info", STR_DTYPE, False, str_validator),
+    Field("source", STR_DTYPE, False, str_validator),  # method
 )
 
 

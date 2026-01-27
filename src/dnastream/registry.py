@@ -251,8 +251,23 @@ class Registry(H5Dataset):
 
         # Resize and allocate block
 
-        block = np.zeros(n_add, dtype=ds.dtype)
+        block = np.empty(n_add, dtype=ds.dtype)
 
+        for name in ds.dtype.names:
+            kind = ds.dtype[name].kind
+            if kind in ("O", "U"):  # vlen/unicode strings
+                block[name] = ""
+            elif kind == "S":  # fixed-width bytes
+                block[name] = b""
+            elif kind == "b":  # bool
+                block[name] = False
+            elif kind in ("i", "u"):  # ints
+                block[name] = 0
+            elif kind == "f":  # floats
+                block[name] = np.nan
+            else:
+                # as a last resort; but try to avoid leaving garbage
+                block[name] = None
         # Defaults
 
         # Fill in registry spine iaw the registry contract
