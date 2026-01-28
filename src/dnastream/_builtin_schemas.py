@@ -2,11 +2,7 @@ import re
 import h5py
 import numpy as np
 from .schema import Schema, Field
-
-SCHEMA_VERSION = "0.1.0"
-
-
-STR_DTYPE = h5py.string_dtype("utf-8")
+from .constants import EVENTS, STR_DTYPE, SCHEMA_VERSION
 
 
 def str_validator(x):
@@ -217,3 +213,26 @@ REGISTRY_SCHEMAS = {
 
 
 #    ("pipeline_version", "S20"),
+
+
+def validate_event(x):
+    if x not in EVENTS:
+        raise ValueError(f"Event '{x}, not valid must be ones of {','.join(EVENTS)}")
+
+
+PROVENANCE_LOG = (
+    Field("id", STR_DTYPE, True, None),
+    Field("timestamp", STR_DTYPE, True, None),  # ISO8601 Z
+    Field("user", STR_DTYPE, True, None),
+    Field("scope", STR_DTYPE, True, None),
+    Field("event", STR_DTYPE, True, validate_event),
+    Field("dataset", STR_DTYPE, True, None),  # full HDF5 path
+    Field("source", STR_DTYPE, False, None),  # module.qualname (optional)
+    Field("info", STR_DTYPE, False, None),  # JSON string (optional)
+)
+
+PROVENANCE_LOG_SCHEMA = Schema(
+    version=SCHEMA_VERSION, fields=PROVENANCE_LOG, label_required=False
+)
+
+PROVENANCE_SCHEMAS = {"log": PROVENANCE_LOG_SCHEMA}

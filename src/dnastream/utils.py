@@ -4,6 +4,7 @@ import time
 import functools
 import numpy as np
 import uuid
+from typing import Callable, Any
 
 
 def wrap_list(val):
@@ -146,3 +147,9 @@ def require_file_exists_static(func):
         return func(fname, *args, **kwargs)
 
     return wrapper
+
+
+def _qualname(fn: Callable[..., Any]) -> str:
+    mod = getattr(fn, "__module__", "") or ""
+    qn = getattr(fn, "__qualname__", None) or getattr(fn, "__name__", "") or ""
+    return f"{mod}.{qn}" if mod else qn

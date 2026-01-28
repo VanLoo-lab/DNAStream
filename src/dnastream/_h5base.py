@@ -5,6 +5,11 @@ import pandas as pd
 import numpy as np
 from .schema import Schema
 from .utils import as_str
+from typing import Callable, Any
+
+from .constants import (
+    Hook,
+)
 
 
 class H5Dataset(ABC):
@@ -77,6 +82,7 @@ class H5Dataset(ABC):
         self._validated = False
 
         self._schema = None
+        self._hooks: list[Hook] = []
 
     def __str__(self) -> str:
         """Return a human-readable summary of the dataset."""
@@ -108,6 +114,13 @@ class H5Dataset(ABC):
     def path(self) -> str:
         """str: Absolute HDF5 path to the dataset."""
         return f"{self._parent.name}/{self._name}"
+
+    def register_hook(self, hook: Hook) -> None:
+        self._hooks.append(hook)
+
+    def _emit(self, scope: str, event: str, fn: str, **payload: Any) -> None:
+        for hook in self._hooks:
+            hook(scope=scope, event=event, dataset=self.path, fn=fn, **payload)
 
     def exists(self) -> bool:
         """Check whether the dataset exists in the parent group.
@@ -403,8 +416,9 @@ class H5Dataset(ABC):
         """
         ...
 
-    @staticmethod
-    def _to_dataframe(arr: np.ndarray) -> pd.DataFrame:
+    def to_dataframe(self, arr: np.ndarray | None = None, **_: Any) -> pd.DataFrame:
+        if arr is None:
+            arr = self._ds()[:]
         # Decode fixed-width byte string fields (dtype kind 'S') before constructing the DataFrame.
         if isinstance(arr, np.ndarray) and arr.dtype.names is not None:
             arr2 = arr.copy()
@@ -443,7 +457,7 @@ class H5Dataset(ABC):
         elif by == "id":
             idx = self.resolve_idx_from_ids(selector, mode=mode)
         elif by == "idx":
-            idx = np.asarray(selector)
+            idx = np.asarray(selector, dtype=object)
         else:
             raise ValueError("by must be one of {'label','id','idx'}")
 
@@ -459,7 +473,7 @@ class H5Dataset(ABC):
         idx_sorted = idx[order]
 
         arr = ds[idx_sorted]
-        df = self._to_dataframe(arr)
+        df = self.to_dataframe(arr=arr)
 
         # restore original requested order (optional but usually expected)
         inv = np.empty_like(order)

@@ -18,8 +18,8 @@ import csv
 from typing import Sequence, Mapping, Any, Optional, Literal
 import numpy as np
 from .registry import Registry
-
-from .utils import wrap_list, require_file_exists_static
+from .constants import SCOPE, EVENTS
+from .utils import wrap_list, require_file_exists_static, _qualname
 
 
 _MAF_COLUMN_MAPPING = {
@@ -105,6 +105,13 @@ class IO:
             delimiter=delimiter,
             **kwargs,
         )
+        self.ds.log_event(
+            scope=SCOPE.IO,
+            event=EVENTS.APPEND,
+            dataset="",
+            fn=_qualname(self.add_snps_from_maf),
+            fname=fname,
+        )
 
     def _add_from_maf(
         self,
@@ -173,6 +180,13 @@ class IO:
             delimiter=delimiter,
             **kwargs,
         )
+        self.ds.log_event(
+            scope=SCOPE.IO,
+            event=EVENTS.APPEND,
+            dataset="",
+            fn=_qualname(self.add_variants_from_maf),
+            fname=fname,
+        )
 
     def add_samples_from_files(
         self,
@@ -210,6 +224,14 @@ class IO:
             activate_new=activate_new,
             delimiter=delimiter,
             **kwargs,
+        )
+
+        self.ds.log_event(
+            scope=SCOPE.IO,
+            event=EVENTS.APPEND,
+            dataset="",
+            fn=_qualname(self.add_samples_from_files),
+            fname=fname,
         )
 
     @staticmethod

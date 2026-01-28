@@ -5,12 +5,15 @@ import socket
 from datetime import datetime, timezone
 import uuid
 from .registry import Registry
-from ._builtin_schemas import REGISTRY_SCHEMAS
+from ._builtin_schemas import REGISTRY_SCHEMAS, PROVENANCE_SCHEMAS
+from .provenance import Provenance
 from .io import IO
 import logging
+from typing import Literal, Callable, Any
 
+from .constants import PACKAGE_VERSION, Event, SCOPE, EVENTS
 
-PACKAGE_VERSION = "0.1.0"
+from .utils import _qualname
 
 
 class DNAStream:
@@ -28,6 +31,7 @@ class DNAStream:
         self._handle = None
 
         self._registries = {}
+        self._provenance = {}
 
         self.io = IO(self)
         self.verbose = verbose
@@ -62,12 +66,21 @@ class DNAStream:
 
     def __getattr__(self, name: str):
         # Allow access like ds.sample / ds.variant
-        if name in REGISTRY_SCHEMAS:
+
+        def raise_if_not_connected():
             if not self.is_connected():
                 raise RuntimeError(
                     "DNAStream is not connected. Call connect() before accessing registries."
                 )
+
+        if name in REGISTRY_SCHEMAS:
+            raise_if_not_connected()
             return self.registry(name)
+
+        if name in PROVENANCE_SCHEMAS:
+            raise_if_not_connected()
+            return self.provenance(name)
+
         raise AttributeError(name)
 
     def connect(self):
@@ -85,8 +98,13 @@ class DNAStream:
         else:
             self._validate_header()
 
+        # Ensure provenance is available for logging
+        self._load_provenance(strict=True)
         # Ensure registry wrappers are available for ds.<registry_name> access
         self._load_registries(strict=True)
+
+        # register hooks
+        self.register_hooks()
 
         if self.verbose:
             self.logger.info(f"DNAStreaming file {self.path}")
@@ -155,6 +173,31 @@ class DNAStream:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+    def _load_provenance(self, *, strict: bool = True) -> None:
+        """Bind Provenance wrappers for provenance log
+
+        For new files (mode 'x'), this will create any missing provenance datasets.
+        For existing files (modes 'r'/'r+'), this requires the datasets to exist.
+        """
+        prov_grp = self.handle.require_group("provenance")
+
+        for key, schema in PROVENANCE_SCHEMAS.items():
+            prov = Provenance(prov_grp, key)
+
+            if key in prov_grp:
+                # Existing dataset: open + validate schema identity
+                prov.open(schema, strict=strict)
+            else:
+                # Missing dataset: only allowed when creating a new file
+                if self.mode == "x":
+                    prov.create(schema)
+                else:
+                    raise ValueError(
+                        f"DNAStream file is missing required provenance '/proveance/{key}'."
+                    )
+
+            self._provenance[key] = prov
+
     def _load_registries(self, *, strict: bool = True) -> None:
         """Bind Registry wrappers for all known registries.
 
@@ -217,15 +260,25 @@ class DNAStream:
         ):
             self.handle.require_group(grp)
 
-        # Reserve provenance subgroups
-        self.handle["provenance"].require_group("runs")
-        self.handle["provenance"].require_group("changes")
+        # # Reserve provenance subgroups
+        # self.handle["provenance"].require_group("runs")
+        # self.handle["provenance"].require_group("changes")
 
         # create registries
         self._load_registries(strict=True)
+        self._load_provenance(strict=True)
+
+        self._emit(EVENTS.CREATE, _qualname(self._initialize_new_file), file=self.path)
 
     def set_patient_id(self, patient_id):
+        old_patient_id = self.handle.attrs["patient_id"]
         self.handle.attrs["patient_id"] = str(patient_id)
+        self._emit(
+            EVENTS.MODIFY,
+            _qualname(self.set_patient_id),
+            old_patient_id=old_patient_id,
+            patient_id=patient_id,
+        )
 
     @property
     def patient_id(self):
@@ -250,3 +303,18 @@ class DNAStream:
         if name not in self._registries:
             raise KeyError(f"Registry with key '{name}' does not exist.")
         return self._registries[name]
+
+    def provenance(self, name: str) -> Registry:
+        if name not in self._provenance:
+            raise KeyError(f"Proveance with key '{name}' does not exist.")
+        return self._provenance[name]
+
+    def log_event(self, scope: str, event: Event, dataset: str, fn: str, **payload):
+        self.provenance("log").add(scope, event, dataset, fn=fn, **payload)
+
+    def _emit(self, event, fn, **payload):
+        self.log_event(SCOPE.DNASTREAM, event, ".", fn, **payload)
+
+    def register_hooks(self):
+        for _, reg in self._registries.items():
+            reg.register_hook(self.log_event)

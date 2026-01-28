@@ -20,6 +20,7 @@ nav:
       # - DNAStream: api/dnastream.md
       - Registry: api/registry.md
       - Schema: api/schema.md
+      - IO: api/io.md
 
 
 plugins:
