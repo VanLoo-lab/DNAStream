@@ -4,20 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dnastream"
-version = "0.1.0"
-description = "Efficient DNA sequencing data storage.logging and retrieval"
+version = "0.1.0-beta"
+description = "DNAStream is an HDF5-backed, multi-modal data structure for organizing DNA sequencing data and downstream evolutionary analysis. It provides compact on-disk storage, fast partial reads, and a structured way to track entities, links, and changes over time."
 authors = [{ name = "Leah L. Weber", email = "llweber@mdanderson.org" }]
 license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.8"
+
 dependencies = [
     "h5py",
     "pandas",
     "numpy",
-    "mkdocs",
-    "mkdocstrings",
-    "mkdocstrings-python",
-    "mkdocs-material"
+]
+
+[project.optional-dependencies]
+docs = [
+    "mkdocs>=1.5",
+    "mkdocs-material>=9",
+    "mkdocstrings[python]>=0.25",
+]
+
+test = [
+    "pytest>=7",
+]
+
+dev = [
+    # convenience bundle for contributors
+    "dnastream[docs,test]",
+    "black>=24",
+
 ]
 
 [project.urls]

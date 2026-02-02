@@ -1,230 +1,196 @@
 # DNAStream
-DNAStream is a multisample, multiplatform DNA sequencing HDF5 data structure for integrated downstream evolutionary analysis. 
 
-<!-- For the source code, visit [https://github.mdanderson.org/llweber/DNAStream](https://github.mdanderson.org/llweber/DNAStream). -->
+DNAStream is an HDF5-backed, multi-modal data structure for organizing DNA sequencing data and downstream evolutionary analysis. It provides compact on-disk storage, fast partial reads, and a structured way to track entities, links, and changes over time.
 
-See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.github.mdanderson.org/llweber/DNAStream/) for the API.
+## Beta scope
 
+This beta release focuses on:
+- **Registry**: typed registries with built-in schemas for core entities (e.g., samples, variants, SNPs) and activation status
+- **Provenance**: lightweight event logging for dataset changes (**create**, **append**, **modify**, **designate**)
 
-![overview](overview.png)
+Expect the API and on-disk layout to evolve during beta.
+
+![overview](docs/assets/dnastream.png)
+*Beta includes Registry + Provenance. Measurements and Results are planned (marked with * in the diagram).*
+
+## Key features
+
+- **Efficient storage and access** via a chunked HDF5 file with lazy reads for large cohorts
+- **Entity registries with schemas** to validate fields, manage activation, and support consistent linking across datasets and analyses
+- **Provenance logging** of change events to support reproducibility and collaboration
+
+## Coming soon
+
+- **Measurements** linked to registered entities (e.g., variant/total read counts, binned counts)
+- **Results** storage and retrieval (e.g., copy number calling, clonal trees)
+- **Canonical result pointers** to mark the active/preferred outputs among multiple runs
+- **Custom schemas** for specialized registries, measurements, and results
+- **Multi-user workflows** with a clear concurrency policy for write access
+
 
 
 ## Table of Contents
 - [Dependencies](#dependencies)
+  - [Optional dependences](#optional-dependencies)
 - [Installation](#installation)
-- [API](#build-and-host-api-locally)
-- [Tutorial](#tutorial)
-  - [Initializing DNAStream](#initializing-dnastream)
-  - [Adding SNVs from MAF Files](#adding-snvs-from-maf-files)
-  - [Adding Read Counts](#adding-read-counts)
-  - [Tree File Format for SNV Phylogenies](#tree-file-format-for-snv-phylogenies)
-  - [Adding SNV Phylogenies](#adding-snv-phylogenies)
-  - [Viewing Modification Logs](#viewing-modification-logs)
-- [Schema (Under Development)](#schema-under-development)
+- [Quickstart](#quickstart)
+- [Documentation](#documentation)
+- [Unit tests](#unit-tests)
+
+
+
 
 
 ## Dependencies
+`DNAStream` has the following dependencies. These will be automatically installed during installation. *Pinned versions to be determined later.*
  - `h5py`
  - `numpy`
  - `pandas`
 
+### Optional dependencies
+
+To view the [documentation](#documentation) locally:
+  -  `mkdocs>=1.5`
+  - `mkdocs-material>=9`
+  - `mkdocstrings[python]>=0.25`
+
+```bash
+pip install ".[docs]"
+```
+
+To run the test suite:
+  - `pytest>=7`
+
+```bash
+pip install ".[test]"
+```
+
+For developers, all of the above dependences plus:
+  - `black>=24`
+
+```bash
+pip install -e ".[dev]"
+```
+
 
 ## Installation
 
-Clone the git repository and create a conda environment (recommended).  
+Create a conda/mamba environment (recommended) and install the package from the Github tagged release. 
 
 ```bash
-git clone git@github.mdanderson.org:llweber/DNAStream.git
-cd DNAstream
 conda create -n dnastream python=3.11
-conda activate dnastream
+conda activate dnastream 
+pip install "git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
 ```
 
-Install the `dnastream` package and dependencies via pip.  
-
-```bash
-pip install .  
-```
 
 Verify the installation. 
 
 ```
-python -c "from dnastream import DNAStream"
+python -c "import dnastream; from dnastream import DNAStream; print('dnastream', dnastream.__version__)"
 ```
 
- Packaage is ready to use if no errors occurred!
+ Package is ready to use if no errors occurred!
 
 
+## Quickstart
+The beta release is focused on **Registry** and **Provenance**. The minimal example below creates a file, appends rows to a registry, iterates decoded rows, and inspects recent provenance events.
 
- ## Build and host API locally
- To build and view the API locally, run the following in a terminal with the `dnastream` environment activated:
- ```bash
-mkdocs build
-mkdocs serve
- ```
-
-You will see a message like `INFO    -  [10:31:55] Browser connected: http://127.0.0.1:8000/`
-
-Then click the link or open a browser at the above address to view the API.
-
- ## Tutorial
-
-
-### Initializing DNAStream
- Import and initialize a DNAStream object by specifying an HDF5 filename. If the file does not exist, empty datasets
- are created from the [schema](#schema-under-development). If the file exists, a connection is established to the file 
- for streaming. 
- ```python
-#create a DNAStream object and corresponding HFD5 file
+```python
 from dnastream import DNAStream
+myfile = "myfile.h5"
 
-#use verbose mode to see additional processing messages
-ds = DNAStream("myfile.h5", verbose=True)
-
+#Create a new DNAStream HDF5 file, user warning if file already exists.
+DNAStream(myfile, mode="x").create()
 ```
 
-### Adding SNVs from MAF Files
-Add SNVs to index and associated metadata from a MAF file(s).
+Outside of `create` it is recommended to connect with a context manager. 
+Here we add to entities to the built-in `sample` registry.
+
 ```python
-#add SNVs to index and associated metadata with 
-maf_file1 = "path/to/favorite/maf/file1.maf"
-ds.add_maf_file(maf_file1)
-maf_file2 = "path/to/favorite/maf/file2.maf"
-#add a list of maf files
-my_maf_files = [maf_file1, maf_file1]
-ds.add_maf_files(my_maf_files)
+with DNAStream(myfile, mode="r+", verbose=True) as ds:
 
- ```
- DNAStream won't add duplicate SNVs (chr:pos:ref:alt) to the index although SNV metadata will be updated at the existing indices.
+    #pointer to the built-in sample registry
+    reg = ds.sample
 
-### Adding Read Counts
-Add read counts for single-cell data
+    reg.add([
+        {"sample_name": "S1", "modality": "bulk"},
+        {"sample_name": "S2", "modality": "single-cell"},
+    ])
+
+    print(f"Sample registry contains {len(reg)} entities")
+```
+
+We can also add variant entitites to the `Variant Registry` and iterate through the registry, extracting key information.
+
 ```python
-#must have columns ordered snv | sample | variant | total
-#column names will be ignored but the order matters. 
-read_count_file = "my_read_count_file.csv"
+with DNAStream(myfile, mode="r+", verbose=True) as ds:
+       
+    ds.variant.add([
+        {"chrom": "chr1", "start_pos": 1231, "end_pos": 1232, "ref_allele": "A", "alt_allele": "T"},
+    ])
 
-
-ds.add_read_counts(read_count_file, source="scdna")
-
-#any new SNVs or samples not in the index will be added 
-#retreive the index logs as Pandas DataFrames to check index changes
-snv_log = ds.get_snv_log()
-print(snv_log)
-sample_log = ds.get_sample_log()
-print(sample_log)
+    for snv in ds.variant:
+        print(f"SNV id: {snv['id']}, SNV label: {snv['label']}, active {snv['active']}")
 ```
 
-### Tree File Format for SNV Phylogenies
-Example of tree file format for SNV phylogenies:
-```
-#tree 1
-8	4
-4	6
-4	0
-6	3
-6	7
-8	2
-8	5
-#tree 2
-8	4
-4	6
-4	0
-6	7
-8	2
-8	5
-4	3
-#tree 3
-8	4
-4	6
-4	0
-6	3
-8	2
-8	5
-4	7
-#tree 4
-8	4
-4	6
-4	0
-8	2
-8	5
-4	3
-4	7
-
-```
-
-### Add SNV phylogenies
-Add SNV phylogenies to DNAStream.
+Then we can inspect the provenance log to see all modifications to the `DNAStream` file.
 ```python
-#ensure file is in the above format
-tree_file = "path/to/trees.txt"
-method= "conipher"
-ds.add_trees_from_file(tree_file, tree_type="SNV", method=method, safe=True)
+with DNAStream(myfile, mode="r+", verbose=True) as ds:
+    
+    # pointer to the built-in provenance modification log
+    log = ds.log
+
+
+    # #extract the entire registry to a dataframe
+    event_log_df = log.to_dataframe()
+    print(event_log_df.head())
+
 ```
 
-Note: Safe mode checks to see if trees have already been added from the source
-file.  If safe=True, trees will be not be added.  If safe=False, duplicate
-trees may be added if trees were previously loaded from the same source file. 
+We can also iterate through a `Registry` or `Provenance` object to obtain a dictionary of each entry:
 
 
-### Viewing Modification Logs
-View the modification log that tracks changes to any dataset.
 ```python
-log = ds.get_dataset_log()
-print(log)
+with DNAStream(myfile, mode="r", verbose=False) as ds:
+    for row in ds.sample:
+        print(row)
+
+    for event in ds.log:
+      print(event)
 ```
 
 
-## Schema (under development)
-The schema is currently underdevelopment is subject to change but below is the currently implemented or prospective design (*). 
-```
-/
- ├── SNV/                     # Shared SNV index
- │   ├── labels               # Short name chr:pos:ref:alt
- │   ├── data                 # Structured array: quality scores, active
- │   ├── cluster              # Integer cluster assignments
- │   ├── log                  # Index modification log
- ├── sample/                  # Sample index
- │   ├── labels               # Sample names
- │   ├── data                 # Structured array: patient ID, source, location, file paths
- │   ├── cluster              # Integer cluster assignments
- │   ├── log                  # Index modification log
- ├── tree/
- │   ├── SNV_trees/  
- │   │   ├── trees            # Variable-length edge lists of clusters
- │   │   ├── data             # Likelihood, rank, method used to generate, etc.
- │   │   ├── labels           # Tree labels
- │   ├── CNA_trees/     
- │   │   ├── trees            # Variable-length edge lists (or Newick strings)
- │   │   ├── data             # Likelihood, rank, method used to generate, etc.
- │   │   ├── labels           # Tree labels
- ├── copy_numbers/
- │   ├── bulk/
- │   │   ├── labels           # Segment labels (chrom, start, end)
- │   │   ├── index            # Bulk-specific segment index
- │   │   ├── profile          # 3D array: (segment, sample, allele-specific CN)
- │   │   ├── logr             # 2D array: (segment, sample) logR values
- │   │   ├── baf              # 2D array: (segment, sample) B-allele frequency
- │   │   ├── log              # Modification log
- │   ├── lcm/
- │   │   ├── labels           # Segment labels
- │   │   ├── index            # LCM-specific segment index
- │   │   ├── profile          # 3D array: (segment, sample, allele-specific CN)
- │   │   ├── logr             # 2D array: (segment, sample) logR values
- │   │   ├── baf              # 2D array: (segment, sample) B-allele frequency
- │   │   ├── log              # Modification log
- │   ├── scdna/
- │   │   ├── labels           # Segment labels
- │   │   ├── index            # Single-cell segment index
- │   │   ├── profile          # (sample, segment) → allele CN tuple
- │   │   ├── log              # Modification log
- ├── read_counts/
- │   ├── variant              # 2D array: (SNV, sample) variant read counts
- │   ├── total                # 2D array: (SNV, sample) total read counts
- │   ├── log                  # Read count modifications log
- ├── metadata/
- │   ├── log                  # Metadata modifications log
- │   ├── sample_info          # Sample metadata
- │   ├── processing_parameters # Processing parameters used in analysis
 
+## Documentation
+
+During the beta phase, the documentation is not yet published on GitHub Pages. You can build and serve the docs locally with MkDocs.
+
+Install the optional documentation dependencies:
+
+```bash
+pip install -e ".[docs]"
+```
+
+Then serve the documentation locally:
+```bash
+mkdocs serve
+```
+
+
+
+MkDocs will print a local URL such as:
+
+`INFO    -  [10:31:55] Browser connected: http://127.0.0.1:8000/`
+
+Open that address in your browser to view the docs.
+
+
+
+
+# Unit tests
+If the [optional dependences](#optional-dependencies) are installed for the test suite, then the package can be tested with:
+
+```bash
+pyest
 ```
