@@ -3,10 +3,10 @@ import h5py
 from dataclasses import dataclass
 
 
+# adding sample by snv metadata table
 
-#adding sample by snv metadata table
+# CLINICAL_DTYPE
 
-# CLINICAL_DTYPE 
 
 @dataclass
 class SampleMetadata:
@@ -52,6 +52,7 @@ class SampleMetadata:
     date_of_sequencing : str
         Date the sample was sequenced (e.g., '2023-06-15').
     """
+
     sample_name: str
     organism: str
     library_strategy: str
@@ -73,26 +74,29 @@ class SampleMetadata:
 
     @staticmethod
     def get_dtype():
-        return np.dtype([
-            ("sample_name", "S100"),
-            ("organism", "S40"),
-            ("library_strategy", "S40"),
-            ("library_source", "S40"),
-            ("library_selection", "S40"),
-            ("library_layout", "S10"),
-            ("platform", "S40"),
-            ("model", "S40"),
-            ("center_name", "S60"),
-            ("run", "S20"),
-            ("study", "S20"),
-            ("coverage", "f4"),
-            ("modality", "S10"),
-            ("location", "S60"),
-            ("bam_file_path", h5py.string_dtype(encoding='utf-8')),
-            ("batch_id", "S40"),
-            ("reference_build", "S20"),
-            ("date_of_sequencing", "S20"),
-        ])
+        return np.dtype(
+            [
+                ("sample_name", "S100"),
+                ("organism", "S40"),
+                ("library_strategy", "S40"),
+                ("library_source", "S40"),
+                ("library_selection", "S40"),
+                ("library_layout", "S10"),
+                ("platform", "S40"),
+                ("model", "S40"),
+                ("center_name", "S60"),
+                ("run", "S20"),
+                ("study", "S20"),
+                ("coverage", "f4"),
+                ("modality", "S10"),
+                ("location", "S60"),
+                ("bam_file_path", h5py.string_dtype(encoding="utf-8")),
+                ("batch_id", "S40"),
+                ("reference_build", "S20"),
+                ("date_of_sequencing", "S20"),
+            ]
+        )
+
 
 @dataclass
 class VariantMetadata:
@@ -126,7 +130,7 @@ class VariantMetadata:
     info : str
         Additional metadata (e.g., from INFO field in VCF/MAF).
     """
-    
+
     chrom: str
     start_pos: int
     end_pos: int
@@ -142,32 +146,29 @@ class VariantMetadata:
 
     @staticmethod
     def get_dtype():
-        return np.dtype([
-            ("chrom", "S5"),
-            ("start_pos", "i8"),
-            ("end_pos", "i8"),
-            ("ref_allele", "S10"),
-            ("alt_allele", "S10"),
-            ("hugo", "S40"),
-            ("entrez_gene_id", "S40"),
-            ("variant_classification", "S25"),
-            ("variant_type", "S10"),
-            ("dbsnp_id", "S20"),
-            ("filter", "S20"),
-            ("info", h5py.string_dtype(encoding='utf-8')),
-        ])
+        return np.dtype(
+            [
+                ("chrom", "S5"),
+                ("start_pos", "i8"),
+                ("end_pos", "i8"),
+                ("ref_allele", "S10"),
+                ("alt_allele", "S10"),
+                ("hugo", "S40"),
+                ("entrez_gene_id", "S40"),
+                ("variant_classification", "S25"),
+                ("variant_type", "S10"),
+                ("dbsnp_id", "S20"),
+                ("filter", "S20"),
+                ("info", h5py.string_dtype(encoding="utf-8")),
+            ]
+        )
+
+    # ("caller")   but could vary by sample
+    # ("strand", "S1"),  #currently all variants report the positive strand, so removing.
+    # ("context", "S10"),  #what was this?
 
 
-
-
-
-
-    #("caller")   but could vary by sample
-        # ("strand", "S1"),  #currently all variants report the positive strand, so removing.
-            # ("context", "S10"),  #what was this?
-
-
-#annotation
+# annotation
 
 
 # SNP_DTYPE = np.dtype([
@@ -180,4 +181,4 @@ class VariantMetadata:
 # ])
 
 
-    #    ("pipeline_version", "S20"),
+#    ("pipeline_version", "S20"),
