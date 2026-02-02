@@ -189,12 +189,11 @@ class Schema:
         if self.label_builder is None:
             label = "|".join(parts)
         else:
-            if len(parts) > 1:
-                # Support both: label_builder(*parts) and label_builder(parts)
-
+            # Prefer calling as label_builder(*parts). If the user provided a builder
+            # that expects a single tuple argument, fall back to that calling convention.
+            try:
                 label = self.label_builder(*parts)
-            else:
-
+            except TypeError:
                 label = self.label_builder(parts)
 
         if self.label_normalizer is not None:

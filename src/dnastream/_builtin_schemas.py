@@ -1,5 +1,4 @@
 import re
-import h5py
 import numpy as np
 from .schema import Schema, Field
 from .constants import EVENTS, STR_DTYPE, SCHEMA_VERSION

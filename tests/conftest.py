@@ -105,7 +105,7 @@ def temp_registry(registry_obj, temp_data_schema):
 def dnastream_obj(temp_h5_file):
     """Provides a connected DNAStream instance for testing."""
     ds = DNAStream(str(temp_h5_file), mode="x")
-    ds.connect()
+    ds._connect()
     try:
         yield ds
     finally:

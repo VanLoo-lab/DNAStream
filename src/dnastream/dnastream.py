@@ -1,6 +1,7 @@
 import h5py
 import os
 import getpass
+import warnings
 import socket
 from datetime import datetime, timezone
 import uuid
@@ -25,9 +26,13 @@ class DNAStream:
             the path to the HDF5 file
         :param mode: str (one of 'r', 'r+', 'x')
         """
-        self._validate_mode(mode)
+
         self.path = path
+
+        mode = self._validate_mode(mode)
+
         self.mode = mode
+
         self._handle = None
 
         self._registries = {}
@@ -83,34 +88,80 @@ class DNAStream:
 
         raise AttributeError(name)
 
-    def connect(self):
+    def create(self) -> None:
+        """Create and initialize a new DNAStream HDF5 file.
+
+        Requires mode 'x' or 'w-' (fail if the file already exists).
+        Leaves the instance connected.
+        """
+        if self.mode not in ("x", "w-"):
+            raise ValueError(
+                f"Mode {self.mode} is not valid for creating a new DNAStream HDF5 file. Use mode 'x' or 'w-'.",
+            )
+
+        if os.path.isfile(self.path):
+            warnings.warn(
+                f"A valid DNAStream file already exists at {self.path}, use `connect() instead.`",
+                UserWarning,
+                stacklevel=2,
+            )
+            return
+            # self.connect()
 
         if self.is_connected():
             return
 
-        if self.mode in ("r", "r+"):
-            self._validate_path(self.path)
+        # Create the file and initialize the DNAStream layout
+        self._handle = h5py.File(name=self.path, mode=self.mode)
+        self._initialize_new_file()
 
-        self._handle = h5py.File(self.path, self.mode)
-
-        if self.mode == "x":
-            self._initialize_new_file()
-        else:
-            self._validate_header()
-
-        # Ensure provenance is available for logging
+        # Create required datasets for registries/provenance
         self._load_provenance(strict=True)
-        # Ensure registry wrappers are available for ds.<registry_name> access
         self._load_registries(strict=True)
-
-        # register hooks
         self.register_hooks()
 
+        # Now that provenance exists, log file creation
+        self._emit(EVENTS.CREATE, _qualname(self.create), file=self.path)
+
         if self.verbose:
-            self.logger.info(f"DNAStreaming file {self.path}")
+            self.logger.info(f"Created DNAStream file {self.path}")
+
+    def open(self) -> None:
+        """Open an existing DNAStream file (alias for connect)."""
+        self.connect()
+
+    def connect(self) -> None:
+        if self.is_connected():
+            return
+
+        if self.mode in ("x", "w-"):
+            warnings.warn(
+                "DNAStream.connect() is for opening existing files. "
+                "Mode is 'x'/'w-'; calling create() instead.",
+                UserWarning,
+                stacklevel=2,
+            )
+            self.create()
+            return
+
+        if self.mode not in ("r", "r+"):
+            warnings.warn(
+                f"Mode {self.mode!r} is not valid for connect(); expected 'r' or 'r+'.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return
+
+        # normal open-existing path
+        self._validate_path(self.path)
+        self._handle = h5py.File(name=self.path, mode=self.mode)
+        self._validate_header()
+        self._load_provenance(strict=True)
+        self._load_registries(strict=True)
+        self.register_hooks()
 
     @staticmethod
-    def _validate_mode(mode):
+    def _validate_mode(mode) -> str:
         """
         Validate that the specified mode is a valid DNAStream mode.
 
@@ -118,18 +169,20 @@ class DNAStream:
             - 'r'  : read-only
             - 'r+' : read/write existing
             - 'x'  : create new (fail if exists)
+            - 'w-' : create new (fail if exists)
 
-        Mode 'w' is intentionally disallowed to prevent silent data loss.
+        Mode 'w' and 'a' are intentionally disallowed to prevent silent data loss.
         """
-        if mode not in ("r", "r+", "x"):
+        if mode not in ("r", "r+", "x", "w-"):
             raise ValueError(
                 "Requested operating mode does not exist.\n"
                 "DNAStream does not support mode 'w' because it can silently overwrite data.\n"
                 "Use:\n"
-                "  'x'  to create a new file (fails if file exists)\n"
+                "  'x/w-'  to create a new file (fails if file exists)\n"
                 "  'r+' to modify an existing file\n"
                 "  'r'  to read only"
             )
+        return mode
 
     @staticmethod
     def _validate_path(path):
@@ -159,6 +212,9 @@ class DNAStream:
             finally:
                 self._handle = None
 
+        if self.verbose:
+            self.logger.info(f"Connection to DNAStream file '{self.path}' closed.")
+
     def is_connected(self) -> bool:
         return (
             self._handle is not None
@@ -167,7 +223,22 @@ class DNAStream:
         )
 
     def __enter__(self):
+        """Enter a context where the underlying HDF5 handle is open.
+
+        Notes
+        -----
+        - For existing files, prefer modes 'r' or 'r+'.
+        - For new files, call `create()` (mode 'x'/'w-') before using the context manager.
+
+        This method calls `connect()` and then verifies that a live handle exists.
+        """
         self.connect()
+        if not self.is_connected():
+            raise RuntimeError(
+                "DNAStream context manager could not open a file handle. "
+                "If you intended to create a new file, call create() first (mode 'x'/'w-'). "
+                "If you intended to open an existing file, use mode 'r' or 'r+'."
+            )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -179,32 +250,42 @@ class DNAStream:
         For new files (mode 'x'), this will create any missing provenance datasets.
         For existing files (modes 'r'/'r+'), this requires the datasets to exist.
         """
-        prov_grp = self.handle.require_group("provenance")
+        if self.mode in ("x", "w-"):
+            prov_grp = self.handle.require_group("provenance")
+        else:
+            if "provenance" not in self.handle:
+                raise ValueError(
+                    "DNAStream file is missing required group '/provenance'."
+                )
+            prov_grp = self.handle["provenance"]
 
         for key, schema in PROVENANCE_SCHEMAS.items():
             prov = Provenance(prov_grp, key)
-
+            created = False
             if key in prov_grp:
                 # Existing dataset: open + validate schema identity
                 prov.open(schema, strict=strict)
             else:
                 # Missing dataset: only allowed when creating a new file
-                if self.mode == "x":
+                if self.mode in ("x", "w-"):
                     prov.create(schema)
+                    created = True
                 else:
                     raise ValueError(
                         f"DNAStream file is missing required provenance '/proveance/{key}'."
                     )
 
             self._provenance[key] = prov
-            self.log_event(
-                SCOPE.DNASTREAM,
-                EVENTS.CREATE,
-                fn=_qualname(prov.create),
-                schema_version=schema.version,
-                dataset=prov.path,
-                schema_hash=schema.hash(),
-            )
+            # Only log creation when we actually created the dataset (new files)
+            if self.mode in ("x", "w-") and created:
+                self.log_event(
+                    SCOPE.DNASTREAM,
+                    EVENTS.CREATE,
+                    dataset=prov.path,
+                    fn=_qualname(prov.create),
+                    schema_version=schema.version,
+                    schema_hash=schema.hash(),
+                )
 
     def _load_registries(self, *, strict: bool = True) -> None:
         """Bind Registry wrappers for all known registries.
@@ -212,7 +293,14 @@ class DNAStream:
         For new files (mode 'x'), this will create any missing registry datasets.
         For existing files (modes 'r'/'r+'), this requires the datasets to exist.
         """
-        reg_grp = self.handle.require_group("registry")
+        if self.mode in ("x", "w-"):
+            reg_grp = self.handle.require_group("registry")
+        else:
+            if "registry" not in self.handle:
+                raise ValueError(
+                    "DNAStream file is missing required group '/registry'."
+                )
+            reg_grp = self.handle["registry"]
 
         for key, schema in REGISTRY_SCHEMAS.items():
             reg = Registry(reg_grp, key)
@@ -222,7 +310,7 @@ class DNAStream:
                 reg.open(schema, strict=strict)
             else:
                 # Missing dataset: only allowed when creating a new file
-                if self.mode == "x":
+                if self.mode in ("x", "w-"):
                     reg.create(schema)
                 else:
                     raise ValueError(
@@ -231,9 +319,8 @@ class DNAStream:
 
             self._registries[key] = reg
 
-    def _initialize_new_file(self):
-        """Initialize a new DNAStream file (mode 'x')."""
-
+    def _initialize_new_file(self) -> None:
+        """Initialize the DNAStream layout on an already-open, empty HDF5 handle."""
         # Safety: only initialize empty files/handles
         if len(self.handle.keys()) != 0 or len(self.handle.attrs) != 0:
             raise RuntimeError("Refusing to initialize: file is not empty.")
@@ -271,12 +358,6 @@ class DNAStream:
         # # Reserve provenance subgroups
         # self.handle["provenance"].require_group("runs")
         # self.handle["provenance"].require_group("changes")
-
-        # create registries
-        self._load_registries(strict=True)
-        self._load_provenance(strict=True)
-
-        self._emit(EVENTS.CREATE, _qualname(self._initialize_new_file), file=self.path)
 
     def set_patient_id(self, patient_id):
         old_patient_id = self.handle.attrs["patient_id"]

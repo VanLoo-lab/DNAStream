@@ -97,7 +97,7 @@ class Registry(H5Dataset):
         return f"Registry(name={self.name!r}, path={self.path!r}, " f"n={n})"
 
     def __iter__(self):
-        for row in self._ds():  # or your own row-yielding logic
+        for row in self._ds():
             yield decode_arr(row)
 
     def __contains__(self, item) -> bool:

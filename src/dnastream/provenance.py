@@ -12,7 +12,7 @@ import numpy as np
 from ._h5base import H5Dataset
 from .constants import EVENTS, Event, Scope
 
-from .utils import _qualname
+from .utils import _qualname, decode_arr
 
 
 class Provenance(H5Dataset):
@@ -46,7 +46,7 @@ class Provenance(H5Dataset):
 
     def __iter__(self) -> Iterable[np.void]:
         for row in self._ds():
-            yield row
+            yield decode_arr(row)
 
     @staticmethod
     def _init_scalar(dtype: np.dtype) -> np.ndarray:

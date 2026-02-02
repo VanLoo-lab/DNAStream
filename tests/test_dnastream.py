@@ -8,7 +8,7 @@ def test_is_connected_lifecycle(temp_h5_file):
 
     assert not ds.is_connected()
 
-    ds.connect()
+    ds._connect()
     assert ds.is_connected()
 
     ds.close()
