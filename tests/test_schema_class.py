@@ -93,7 +93,7 @@ def test_make_label():
         version="1.0.0",
         label_from=("x", "y"),
         label_required=True,
-        label_builder=lambda x: "|".join(x),
+        label_builder=lambda x, y: f"{x}|{y}",
     )
     row = {"x": "X", "y": "Y"}
     assert "X|Y" == my_schema.make_label(row)
@@ -103,7 +103,7 @@ def test_make_label():
         version="1.0.0",
         label_from=("x", "y"),
         label_required=True,
-        label_builder=lambda x: "|".join(x),
+        label_builder=lambda x, y: f"{x}|{y}",
         label_normalizer=lambda x: x.lower(),
     )
     assert "x|y" == my_schema.make_label(row)

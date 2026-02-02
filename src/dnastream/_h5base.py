@@ -4,12 +4,10 @@ import warnings
 import pandas as pd
 import numpy as np
 from .schema import Schema
-from .utils import as_str
+from .utils import as_str, _qualname, as_str_vec, decode_arr
 from typing import Callable, Any
 
-from .constants import (
-    Hook,
-)
+from .constants import Hook, LABEL_SCALARS, ID_SCALARS
 
 
 class H5Dataset(ABC):
@@ -368,6 +366,7 @@ class H5Dataset(ABC):
 
         if validate:
             self.validate()
+
         return ds
 
     @abstractmethod
@@ -414,22 +413,49 @@ class H5Dataset(ABC):
           types (e.g., registries, measurements, provenance tables) should
           document their accepted inputs.
         """
-        ...
 
-    def to_dataframe(self, arr: np.ndarray | None = None, **_: Any) -> pd.DataFrame:
+    def to_dataframe(self, arr=None, **_):
         if arr is None:
             arr = self._ds()[:]
-        # Decode fixed-width byte string fields (dtype kind 'S') before constructing the DataFrame.
-        if isinstance(arr, np.ndarray) and arr.dtype.names is not None:
-            arr2 = arr.copy()
-            for name in arr2.dtype.names:
-                dt = arr2.dtype[name]
-                if dt.kind == "S":
-                    arr2[name] = np.char.decode(arr2[name], "utf-8")
-            return pd.DataFrame(arr2)
 
-        # Fallback for non-structured arrays
-        return pd.DataFrame(arr)
+        arr = decode_arr(arr)
+
+        df = pd.DataFrame(arr)
+
+        # last-mile safety: decode any bytes that survived into object columns
+        for col in df.columns:
+            if df[col].dtype == object:
+                df[col] = df[col].map(
+                    lambda x: (
+                        x.decode("utf-8") if isinstance(x, (bytes, np.bytes_)) else x
+                    )
+                )
+
+        return df
+
+        # Safety net: decode bytes hiding in object columns after DataFrame construction
+        # for col in df.columns:
+        #     if df[col].dtype == object:
+        #         df[col] = df[col].map(lambda x: x.decode("utf-8") if isinstance(x, (bytes, np.bytes_)) else x)
+
+        # return df
+
+    # def to_dataframe(self, arr: np.ndarray | None = None, **_: Any) -> pd.DataFrame:
+    #     if arr is None:
+    #         arr = self._ds()[:]
+    #     # Decode fixed-width byte string fields (dtype kind 'S') before constructing the DataFrame.
+    #     df = pd.DataFrame(arr)
+
+    #     #decoding byte columns
+    #     # Source - https://stackoverflow.com/a/63028569
+    #     # Posted by Christabella Irwanto
+    #     # Retrieved 2026-01-29, License - CC BY-SA 4.0
+
+    #     for col, dtype in df.dtypes.items():
+    #         if dtype == object:  # Only process byte object columns.
+    #             df[col] = df[col].apply(lambda x: x.decode("utf-8"))
+
+    #     return df #pd.DataFrame(arr)
 
     def get(
         self, selector=None, *, by: str | None = None, mode: str = "active_only"

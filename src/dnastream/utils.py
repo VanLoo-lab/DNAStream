@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import pathlib
 import time
@@ -153,3 +154,41 @@ def _qualname(fn: Callable[..., Any]) -> str:
     mod = getattr(fn, "__module__", "") or ""
     qn = getattr(fn, "__qualname__", None) or getattr(fn, "__name__", "") or ""
     return f"{mod}.{qn}" if mod else qn
+
+
+def decode(x):
+    return x.decode("utf-8") if isinstance(x, (bytes, np.bytes_)) else x
+
+
+def decode_arr(x: Any, *, encoding: str = "utf-8") -> Any:
+    """Decode a single HDF5/NumPy row into pure Python types.
+
+    - For a NumPy structured scalar (np.void) or 0-d structured array, return dict.
+    - For a 1-d structured array, return list[dict].
+    - Otherwise return x unchanged.
+
+    This avoids the 'S' dtype trap where decoded strings get cast back to bytes.
+    """
+
+    def _decode_scalar_row(row: np.void) -> dict[str, object]:
+        out: dict[str, object] = {}
+        for name in row.dtype.names or ():
+            v = row[name]
+            if isinstance(v, (bytes, np.bytes_)):
+                v = v.decode(encoding)
+            elif isinstance(v, np.generic):
+                v = v.item()
+            out[name] = v
+        return out
+
+    # structured scalar
+    if isinstance(x, np.void) and getattr(x.dtype, "names", None) is not None:
+        return _decode_scalar_row(x)
+
+    # structured array
+    if isinstance(x, np.ndarray) and getattr(x.dtype, "names", None) is not None:
+        if x.shape == ():
+            return _decode_scalar_row(x[()])
+        return [_decode_scalar_row(r) for r in x]
+
+    return x

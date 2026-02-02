@@ -21,7 +21,6 @@ def test_add_variants_from_maf(dnastream_obj, temp_maf):
 
 
 def test_add_samples_from_csv(dnastream_obj, temp_sample_csv):
-    init_log_size = len(dnastream_obj.log)
 
     dnastream_obj.io.add_samples_from_files(temp_sample_csv)
     assert len(dnastream_obj.sample) == 2

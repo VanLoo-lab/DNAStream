@@ -14,7 +14,7 @@ import numpy as np
 import h5py
 import warnings
 from ._h5base import H5Dataset
-from .utils import norm_key, as_str, as_str_vec, _qualname
+from .utils import norm_key, as_str, as_str_vec, _qualname, decode_arr
 
 import pandas as pd
 import collections.abc as cabc
@@ -98,7 +98,7 @@ class Registry(H5Dataset):
 
     def __iter__(self):
         for row in self._ds():  # or your own row-yielding logic
-            yield row
+            yield decode_arr(row)
 
     def __contains__(self, item) -> bool:
         """
@@ -153,23 +153,7 @@ class Registry(H5Dataset):
         rid = norm_key(as_str(items[0]))
 
         self._load_cache()
-        row = self._row_by_id(rid)
-
-        out: dict[str, object] = {}
-        for name in row.dtype.names:
-            v = row[name]
-
-            # decode fixed-length HDF5 strings
-            if isinstance(v, (bytes, np.bytes_)):
-                v = v.decode("utf-8")
-
-            # convert numpy scalars (np.int64, np.bool_, etc.) to Python scalars
-            elif isinstance(v, np.generic):
-                v = v.item()
-
-            out[name] = v
-
-        return out
+        return decode_arr(self._row_by_id(rid))
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -181,6 +165,20 @@ class Registry(H5Dataset):
         cols = self.columns
         spine = set(REGISTRY_SPINE)
         return tuple(c for c in cols if c not in spine)
+
+    def create(
+        self,
+        schema: Schema,
+        **kwargs,
+    ) -> h5py.Dataset:
+        """Create a registry dataset and log"""
+        super().create(schema=schema, shape=(0,), **kwargs)
+        self._emit(
+            EVENTS.CREATE,
+            fn=_qualname(self.create),
+            schema_version=schema.version,
+            schema_hash=schema.hash(),
+        )
 
     def add(self, rows: list[dict], activate_new: bool = True) -> None:
         """Append rows to the registry (append-only insert).

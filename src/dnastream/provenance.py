@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import getpass
 import uuid
 from typing import Any, Callable, Iterable
-
+from .schema import Schema
 import h5py
 import numpy as np
 
@@ -60,6 +60,14 @@ class Provenance(H5Dataset):
                 elif kind == "S":
                     row[name] = b""
         return row
+
+    def create(
+        self,
+        schema: Schema,
+        **kwargs,
+    ) -> h5py.Dataset:
+        """Create a Provenance dataset"""
+        super().create(schema=schema, shape=(0,), **kwargs)
 
     def add(
         self,

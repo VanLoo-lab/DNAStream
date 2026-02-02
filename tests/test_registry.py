@@ -181,7 +181,7 @@ def test_to_dataframe(registry_obj, temp_data_rows):
     assert df.shape[0] == 2 * len(temp_data_rows)
 
     variables = df["variable"].tolist()
-    variables = [s.decode("utf-8") for s in variables]
+    # variables = [s.decode("utf-8") for s in variables]
     values = df["value"].to_list()
 
     for var, val in zip(variables, values):
@@ -227,8 +227,10 @@ def test_iter(registry_obj, temp_data_rows):
     """
     registry_obj.add(temp_data_rows)
     for i, row in enumerate(registry_obj):
+        print(row["variable"])
+
         assert row["value"] == temp_data_rows[i]["value"]
-        assert row["variable"].decode("utf-8") == temp_data_rows[i]["variable"]
+        assert row["variable"] == temp_data_rows[i]["variable"]
 
 
 def test_resolve_ids(registry_obj, temp_data_rows, temp_registry_schema):

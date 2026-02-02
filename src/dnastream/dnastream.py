@@ -197,6 +197,14 @@ class DNAStream:
                     )
 
             self._provenance[key] = prov
+            self.log_event(
+                SCOPE.DNASTREAM,
+                EVENTS.CREATE,
+                fn=_qualname(prov.create),
+                schema_version=schema.version,
+                dataset=prov.path,
+                schema_hash=schema.hash(),
+            )
 
     def _load_registries(self, *, strict: bool = True) -> None:
         """Bind Registry wrappers for all known registries.
