@@ -180,7 +180,9 @@ class Registry(H5Dataset):
             schema_hash=schema.hash(),
         )
 
-    def add(self, rows: list[dict], activate_new: bool = True) -> None:
+    def add(
+        self, rows: list[dict], activate_new: bool = True, allow_duplicate_labels=False
+    ) -> None:
         """Append rows to the registry (append-only insert).
 
         Parameters
@@ -193,6 +195,12 @@ class Registry(H5Dataset):
             - If True (default): deactivate the existing active row and keep the new row
               active.
             - If False: keep the existing row active and insert the new row as inactive.
+        allow_duplicate_labels : bool, optional
+            Whether to allow duplicate labels to be added to the registry
+
+            - If True: data associated wtih labels that collide with existing labels will be added
+            to the registry and activation will be set according to `activate_new`.
+            - If False (default), data associated with existing labels will not be added to the registry.
 
         Returns
         -------
@@ -213,17 +221,14 @@ class Registry(H5Dataset):
         - ``created_at``: UTC ISO 8601 timestamp ending in ``"Z"``
         - ``created_by``: current username
         """
+        if len(rows) == 0:
+            return
 
         ds = self.open()
         n0 = ds.shape[0]
         names = ds.dtype.names
 
         n_add = len(rows)
-        if n_add == 0:
-            return
-
-        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        user = getpass.getuser()
 
         # Compute labels (or None) and find collisions against *active* existing rows
         if not self.schema.label_required:
@@ -237,7 +242,19 @@ class Registry(H5Dataset):
         if labels is not None:
             collisions = self._detect_label_collisions(labels, active_only=True)
 
+        if not allow_duplicate_labels:
+            duplicate_label_idx = [x for x, _ in collisions]
+            n_add = len(rows) - len(duplicate_label_idx)
+        else:
+            duplicate_label_idx = []
+
+        if n_add == 0:
+            return
+
         protected = set(REGISTRY_SPINE)
+
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        user = getpass.getuser()
 
         # Resize and allocate block
 
@@ -276,7 +293,7 @@ class Registry(H5Dataset):
         block["idx"] = np.arange(n0, n0 + n_add)
 
         # Apply collision policy
-        if collisions:
+        if collisions and allow_duplicate_labels:
             if activate_new:
                 # Deactivate existing active rows
                 self.deactivate_labels([labels[new_i] for new_i, _ in collisions])
@@ -287,6 +304,9 @@ class Registry(H5Dataset):
 
         # Fill from input
         for i, row in enumerate(rows):
+            # skip duplicates
+            if i in duplicate_label_idx:
+                continue
             for name in names:
                 if name in protected:
                     continue

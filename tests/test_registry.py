@@ -123,18 +123,19 @@ def test_add_duplicate_rows_activated_properly(
     registry_obj.add(temp_data_rows)
     assert len(registry_obj) == len(temp_data_rows)
     assert not registry_obj._cache_valid
+
     df = registry_obj.get(labs, by="label", mode="active_only")
     assert df.shape[0] == len(temp_data_rows)
 
     registry_obj.validate()
 
-    registry_obj.add(temp_data_rows, activate_new=False)
+    registry_obj.add(temp_data_rows, activate_new=False, allow_duplicate_labels=True)
     assert len(registry_obj) == 2 * len(temp_data_rows)
     assert not registry_obj._cache_valid
 
     registry_obj.validate()
 
-    registry_obj.add(temp_data_rows, activate_new=True)
+    registry_obj.add(temp_data_rows, activate_new=True, allow_duplicate_labels=True)
     assert len(registry_obj) == 3 * len(temp_data_rows)
     df = registry_obj.get(labs, by="label", mode="active_only")
     registry_obj.validate()
@@ -154,7 +155,7 @@ def test_find_ids(registry_obj, temp_data_rows, temp_registry_schema):
     for _, rows in row_vals.items():
         assert len(rows) == 1
 
-    registry_obj.add(temp_data_rows)
+    registry_obj.add(temp_data_rows, allow_duplicate_labels=True)
     row_vals = registry_obj.find_ids(labs, mode="all")
     for _, rows in row_vals.items():
         assert len(rows) == 2
@@ -173,7 +174,7 @@ def test_to_dataframe(registry_obj, temp_data_rows):
     assert isinstance(df, pandas.DataFrame)
     assert df.shape[0] == len(temp_data_rows)
 
-    registry_obj.add(temp_data_rows)
+    registry_obj.add(temp_data_rows, allow_duplicate_labels=True)
     df = registry_obj.to_dataframe(mode="active_only")
     assert df.shape[0] == len(temp_data_rows)
 
@@ -359,7 +360,7 @@ def test_activate_ids(registry_obj, temp_data_rows, temp_registry_schema):
 
     registry_obj.add(temp_data_rows)
     first_ids = registry_obj.resolve_ids(labs)
-    registry_obj.add(temp_data_rows)
+    registry_obj.add(temp_data_rows, allow_duplicate_labels=True)
     ids = [row["id"] for row in registry_obj]
     ids = ids[::-1]
     activate_ids = ids[: len(temp_data_rows)]
@@ -416,7 +417,7 @@ def test_activate_labels(registry_obj, temp_data_rows, temp_registry_schema):
     registry_obj.activate_labels(labs)
     df = registry_obj.to_dataframe()
     assert df["active"].sum() == len(temp_data_rows)
-    registry_obj.add(temp_data_rows)
+    registry_obj.add(temp_data_rows, allow_duplicate_labels=True)
 
     # check that the newest labels are activated
     registry_obj.activate_labels(labs, activate_newest=True)
@@ -499,3 +500,19 @@ def test_update_registry_items(registry_obj, temp_data_rows):
     # df = registry_obj.get("var0", by="label")
     # assert df.shape[0] == 1
     # assert df["value"][0] == 0
+
+
+def test_add_duplicate_labels_false(registry_obj, temp_data_rows):
+    """
+    Test to make sure that setting `allow_duplicate_labels` to false does not
+    add duplicate labels to the registry.
+    """
+
+    registry_obj.add(temp_data_rows, activate_new=True)
+    assert len(registry_obj) == len(temp_data_rows)
+
+    registry_obj.add(temp_data_rows, activate_new=True, allow_duplicate_labels=False)
+    assert len(registry_obj) == len(temp_data_rows)
+
+    registry_obj.add(temp_data_rows, activate_new=False, allow_duplicate_labels=False)
+    assert len(registry_obj) == len(temp_data_rows)
