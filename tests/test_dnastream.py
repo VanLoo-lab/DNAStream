@@ -5,14 +5,8 @@ from dnastream import DNAStream
 
 def test_create_dnastream_file(temp_h5_file):
 
-    ds = DNAStream(str(temp_h5_file), mode="r")
-    with pytest.raises(ValueError):
-        ds.create()
+    ds = DNAStream.create(path=str(temp_h5_file), patient_id="foo")
 
-    ds.set_mode("x")
-    assert not ds.is_connected()
-
-    ds.create(patient_id="foo")
     assert ds.is_connected()
     assert ds.patient_id == "foo"
 
@@ -20,19 +14,21 @@ def test_create_dnastream_file(temp_h5_file):
     assert not ds.is_connected()
 
 
-def test_is_connected_lifecycle(temp_h5_file):
-    ds = DNAStream(str(temp_h5_file), mode="x")
+def test_dnastream_open(temp_h5_file):
 
-    assert not ds.is_connected()
+    with pytest.raises(FileNotFoundError):
+        ds = DNAStream.open(path=str(temp_h5_file))
 
-    ds.create()
+    _ = DNAStream.create(str(temp_h5_file))
+    with pytest.raises(ValueError):
+        ds = DNAStream.open(str(temp_h5_file), mode="x")
+
+    ds = DNAStream.open(str(temp_h5_file), mode="r")
     assert ds.is_connected()
-
-    ds.connect()
-    assert ds.is_connected()
-
     ds.close()
-    assert not ds.is_connected()
+
+    with DNAStream.open(str(temp_h5_file), mode="r+") as ds:
+        assert ds.is_connected()
 
 
 def test_set_patient_id(dnastream_obj):

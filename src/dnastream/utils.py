@@ -6,6 +6,7 @@ import functools
 import numpy as np
 import uuid
 from typing import Callable, Any
+from importlib.metadata import version, PackageNotFoundError
 
 
 def wrap_list(val):
@@ -192,3 +193,10 @@ def decode_arr(x: Any, *, encoding: str = "utf-8") -> Any:
         return [_decode_scalar_row(r) for r in x]
 
     return x
+
+
+def package_version(pkg: str = "dnastream") -> str:
+    try:
+        return version(pkg)
+    except PackageNotFoundError:
+        return "0+unknown"

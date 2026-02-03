@@ -105,7 +105,7 @@ class IO:
             delimiter=delimiter,
             **kwargs,
         )
-        self.ds.log_event(
+        self.ds._record_event(
             scope=SCOPE.IO,
             event=EVENTS.APPEND,
             dataset="",
@@ -184,7 +184,7 @@ class IO:
             delimiter=delimiter,
             **kwargs,
         )
-        self.ds.log_event(
+        self.ds._record_event(
             scope=SCOPE.IO,
             event=EVENTS.APPEND,
             dataset="",
@@ -232,7 +232,7 @@ class IO:
             **kwargs,
         )
 
-        self.ds.log_event(
+        self.ds._record_event(
             scope=SCOPE.IO,
             event=EVENTS.APPEND,
             dataset="",

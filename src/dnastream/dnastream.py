@@ -14,11 +14,11 @@ from typing import Literal, Callable, Any
 
 from .constants import PACKAGE_VERSION, Event, SCOPE, EVENTS
 
-from .utils import _qualname
+from .utils import require_file_exists, _qualname, package_version
 
 
 class DNAStream:
-    def __init__(self, path, mode, verbose=False):
+    def __init__(self, path, verbose=False):
         """
         The core class for a DNAStream object.
 
@@ -29,9 +29,9 @@ class DNAStream:
 
         self.path = path
 
-        mode = self._validate_mode(mode)
+        # mode = self._validate_mode(mode)
 
-        self.mode = mode
+        self._mode = None
 
         self._handle = None
 
@@ -88,81 +88,126 @@ class DNAStream:
 
         raise AttributeError(name)
 
-    def set_mode(self, mode: str):
-        mode = self._validate_mode(mode)
-        self.mode = mode
+    # @staticmethod
+    # def file_exists(self, path):
+    #     return os.path.isfile(self.path)
 
-    def create(self, patient_id="") -> None:
+    def set_patient_id(self, patient_id):
+        """
+        Update the patient_id in the HDF5 file.
+
+        patient_id : str
+            The new patient_id to write into the DNAStream file.
+        """
+        old_patient_id = self.handle.attrs["patient_id"]
+        self.handle.attrs["patient_id"] = str(patient_id)
+        self._emit(
+            EVENTS.MODIFY,
+            _qualname(self.set_patient_id),
+            old_patient_id=old_patient_id,
+            patient_id=patient_id,
+        )
+
+    def registry(self, name: str) -> Registry:
+        if name not in self._registries:
+            raise KeyError(f"Registry with key '{name}' does not exist.")
+        return self._registries[name]
+
+    def provenance(self, name: str) -> Registry:
+        if name not in self._provenance:
+            raise KeyError(f"Proveance with key '{name}' does not exist.")
+        return self._provenance[name]
+
+    def _bind_components(self, strict=True):
+        self._load_provenance(strict=True)
+        self._load_registries(strict=True)
+        self._register_hooks()
+
+    @classmethod
+    def create(cls, path: str, *, patient_id: str = "", verbose: bool = False):
         """Create and initialize a new DNAStream HDF5 file.
 
-        Requires mode 'x' or 'w-' (fail if the file already exists).
-        Leaves the instance connected.
+        path : str
+            The path to where the DNAStream file should be created.
+        patient_id : str, optional
+            The patient id attribute for the DNAStream file
+        verbose : bool, optional
+            Flag to provide more verbose output.
+
+
+        Raises
+        ------
+        FileExistsError
         """
-        if self.mode not in ("x", "w-"):
+        if os.path.isfile(path):
+            raise FileExistsError(
+                f"'{path} already exists, DNAStream file not created, use `open()` instead."
+            )
+        ds = cls(path, verbose)
+        ds._initialize_new_file(patient_id=patient_id)
+
+        ds._bind_components(strict=True)
+
+        ds._emit(EVENTS.CREATE, _qualname(ds.create), file=path)
+
+        if ds.verbose:
+            ds.logger.info(f"Created DNAStream file {path}")
+        return ds
+
+    @classmethod
+    def open(
+        cls,
+        path: str,
+        *,
+        mode: Literal["r", "r+"] = "r",
+        verbose: bool = False,
+    ):
+        """Open the stream to DNAStream file.
+
+        path : str
+            The path to where the DNAStream file should be created.
+        mode : str, optional
+            The mode used to open the stream.  'r' is read-only and 'r+' gives read/write access.
+        verbose : bool, optional
+            Flag to provide more verbose output.
+
+        Raises
+        ------
+        FileNotFoundError : if file does not exist at path
+
+        ValueError : if an invalid mode is passed
+        """
+
+        if mode not in ("r", "r+"):
             raise ValueError(
-                f"Mode {self.mode} is not valid for creating a new DNAStream HDF5 file. Use mode 'x' or 'w-'.",
+                f"Mode '{mode}' invalid for opening stream; use 'r' or 'r+'."
+            )
+        if not os.path.isfile(path):
+            raise FileNotFoundError(
+                f"File '{path}' not found. Use `create()` to initialize file before opening."
             )
 
-        if os.path.isfile(self.path):
-            warnings.warn(
-                f"A valid DNAStream file already exists at {self.path}, use `connect() instead.`",
-                UserWarning,
-                stacklevel=2,
-            )
-            return
-            # self.connect()
+        ds = cls(path, verbose=verbose)
 
-        if self.is_connected():
-            return
+        try:
+            ds._handle = h5py.File(name=path, mode=mode)
+            ds._mode = mode
 
-        # Create the file and initialize the DNAStream layout
-        self._handle = h5py.File(name=self.path, mode=self.mode)
-        self._initialize_new_file(patient_id=patient_id)
+            ds._validate_header()
+            ds._bind_components(strict=True)
+            return ds
 
-        # Create required datasets for registries/provenance
-        self._load_provenance(strict=True)
-        self._load_registries(strict=True)
-        self.register_hooks()
+        except Exception:
+            # avoid leaking a live handle on failure
+            ds.close()
+            raise
 
-        # Now that provenance exists, log file creation
-        self._emit(EVENTS.CREATE, _qualname(self.create), file=self.path)
-
-        if self.verbose:
-            self.logger.info(f"Created DNAStream file {self.path}")
-
-    def open(self) -> None:
-        """Open an existing DNAStream file (alias for connect)."""
-        self.connect()
-
-    def connect(self) -> None:
-        if self.is_connected():
-            return
-
-        if self.mode in ("x", "w-"):
-            warnings.warn(
-                "DNAStream.connect() is for opening existing files. "
-                "Mode is 'x'/'w-'; calling create() instead.",
-                UserWarning,
-                stacklevel=2,
-            )
-            self.create()
-            return
-
-        if self.mode not in ("r", "r+"):
-            warnings.warn(
-                f"Mode {self.mode!r} is not valid for connect(); expected 'r' or 'r+'.",
-                UserWarning,
-                stacklevel=2,
-            )
-            return
-
-        # normal open-existing path
-        self._validate_path(self.path)
-        self._handle = h5py.File(name=self.path, mode=self.mode)
-        self._validate_header()
-        self._load_provenance(strict=True)
-        self._load_registries(strict=True)
-        self.register_hooks()
+    def is_connected(self) -> bool:
+        return (
+            self._handle is not None
+            and getattr(self._handle, "id", None) is not None
+            and self._handle.id.valid
+        )
 
     @staticmethod
     def _validate_mode(mode) -> str:
@@ -197,7 +242,9 @@ class DNAStream:
             path to the h5 file
         """
         if not os.path.isfile(path):
-            raise FileNotFoundError(f"HDF5 file '{path}' does not exist.")
+            raise FileNotFoundError(
+                f"DNAStream file '{path}' does not exist. Use 'create()' to initialize it."
+            )
 
     @property
     def handle(self):
@@ -219,12 +266,8 @@ class DNAStream:
         if self.verbose:
             self.logger.info(f"Connection to DNAStream file '{self.path}' closed.")
 
-    def is_connected(self) -> bool:
-        return (
-            self._handle is not None
-            and getattr(self._handle, "id", None) is not None
-            and self._handle.id.valid
-        )
+    # def exists(self):
+    #     return os.path.isfile(self.path) and self.is_valid()
 
     def __enter__(self):
         """Enter a context where the underlying HDF5 handle is open.
@@ -236,13 +279,14 @@ class DNAStream:
 
         This method calls `connect()` and then verifies that a live handle exists.
         """
-        self.connect()
+
+    def __enter__(self):
         if not self.is_connected():
             raise RuntimeError(
-                "DNAStream context manager could not open a file handle. "
-                "If you intended to create a new file, call create() first (mode 'x'/'w-'). "
-                "If you intended to open an existing file, use mode 'r' or 'r+'."
+                "Use ds.open(mode=...) or ds.create(...) before entering context."
             )
+        if self.verbose:
+            self.logger.info(f"Connection to DNAStream file '{self.path}' open.")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -254,42 +298,20 @@ class DNAStream:
         For new files (mode 'x'), this will create any missing provenance datasets.
         For existing files (modes 'r'/'r+'), this requires the datasets to exist.
         """
-        if self.mode in ("x", "w-"):
-            prov_grp = self.handle.require_group("provenance")
-        else:
-            if "provenance" not in self.handle:
-                raise ValueError(
-                    "DNAStream file is missing required group '/provenance'."
-                )
-            prov_grp = self.handle["provenance"]
+        # if self.mode in ("x", "w-"):
+        #     prov_grp = self.handle.require_group("provenance")
+
+        if "provenance" not in self.handle:
+            raise ValueError("DNAStream file is missing required group '/provenance'.")
+        prov_grp = self.handle["provenance"]
 
         for key, schema in PROVENANCE_SCHEMAS.items():
             prov = Provenance(prov_grp, key)
-            created = False
             if key in prov_grp:
                 # Existing dataset: open + validate schema identity
                 prov.open(schema, strict=strict)
-            else:
-                # Missing dataset: only allowed when creating a new file
-                if self.mode in ("x", "w-"):
-                    prov.create(schema)
-                    created = True
-                else:
-                    raise ValueError(
-                        f"DNAStream file is missing required provenance '/proveance/{key}'."
-                    )
 
             self._provenance[key] = prov
-            # Only log creation when we actually created the dataset (new files)
-            if self.mode in ("x", "w-") and created:
-                self.log_event(
-                    SCOPE.DNASTREAM,
-                    EVENTS.CREATE,
-                    dataset=prov.path,
-                    fn=_qualname(prov.create),
-                    schema_version=schema.version,
-                    schema_hash=schema.hash(),
-                )
 
     def _load_registries(self, *, strict: bool = True) -> None:
         """Bind Registry wrappers for all known registries.
@@ -297,14 +319,8 @@ class DNAStream:
         For new files (mode 'x'), this will create any missing registry datasets.
         For existing files (modes 'r'/'r+'), this requires the datasets to exist.
         """
-        if self.mode in ("x", "w-"):
-            reg_grp = self.handle.require_group("registry")
-        else:
-            if "registry" not in self.handle:
-                raise ValueError(
-                    "DNAStream file is missing required group '/registry'."
-                )
-            reg_grp = self.handle["registry"]
+
+        reg_grp = self.handle["registry"]
 
         for key, schema in REGISTRY_SCHEMAS.items():
             reg = Registry(reg_grp, key)
@@ -312,27 +328,22 @@ class DNAStream:
             if key in reg_grp:
                 # Existing dataset: open + validate schema identity
                 reg.open(schema, strict=strict)
-            else:
-                # Missing dataset: only allowed when creating a new file
-                if self.mode in ("x", "w-"):
-                    reg.create(schema)
-                else:
-                    raise ValueError(
-                        f"DNAStream file is missing required registry '/registry/{key}'."
-                    )
 
             self._registries[key] = reg
 
     def _initialize_new_file(self, patient_id="") -> None:
         """Initialize the DNAStream layout on an already-open, empty HDF5 handle."""
         # Safety: only initialize empty files/handles
+
+        self._handle = h5py.File(self.path, mode="x")
+
         if len(self.handle.keys()) != 0 or len(self.handle.attrs) != 0:
             raise RuntimeError("Refusing to initialize: file is not empty.")
 
         # Required file-level attributes
         self.handle.attrs["dnastream_format"] = "DNAStream"
-        self.handle.attrs["schema_version"] = PACKAGE_VERSION
-        # self.handle.attrs["package_version"] = PACKAGE_VERSION
+        # self.handle.attrs["schema_version"] = PACKAGE_VERSION
+        self.handle.attrs["package_version"] = package_version("dnastream")
         self.handle.attrs["created_by"] = getpass.getuser()
         self.handle.attrs["created_on_host"] = socket.gethostname()
         self.handle.attrs["created_at"] = (
@@ -359,32 +370,45 @@ class DNAStream:
         ):
             self.handle.require_group(grp)
 
-        # # Reserve provenance subgroups
-        # self.handle["provenance"].require_group("runs")
-        # self.handle["provenance"].require_group("changes")
+        prov_grp = self.handle["provenance"]
+        for key, schema in PROVENANCE_SCHEMAS.items():
+            prov = Provenance(prov_grp, key)
+            prov.create(schema)
 
-    def set_patient_id(self, patient_id):
-        old_patient_id = self.handle.attrs["patient_id"]
-        self.handle.attrs["patient_id"] = str(patient_id)
-        self._emit(
-            EVENTS.MODIFY,
-            _qualname(self.set_patient_id),
-            old_patient_id=old_patient_id,
-            patient_id=patient_id,
-        )
+        self._load_provenance()
+
+        reg_grp = self.handle["registry"]
+        for key, schema in REGISTRY_SCHEMAS.items():
+            reg = Registry(reg_grp, key)
+            reg.create(schema)
+
+            self._record_event(
+                SCOPE.DNASTREAM,
+                EVENTS.CREATE,
+                dataset=reg.path,
+                fn=_qualname(reg.create),
+                schema_version=schema.version,
+                schema_hash=schema.hash(),
+            )
+        self._load_registries()
 
     @property
     def patient_id(self):
         return self.handle.attrs["patient_id"]
 
+    @property
+    def mode(self):
+        return self._mode
+
     def _validate_header(self):
         """Validate that this is DNAStream file before modification or reading."""
         fmt = self.handle.attrs.get("dnastream_format", None)
+
         if fmt != "DNAStream":
             raise ValueError(
                 "File is not specified as a DNAStream object: missing/invalid attribute 'dnastream_format'."
             )
-        if "schema_version" not in self.handle.attrs:
+        if "package_version" not in self.handle.attrs:
             raise ValueError(
                 "DNAStream file missing required attribute 'schema_version'."
             )
@@ -392,22 +416,12 @@ class DNAStream:
     def _handle_provider(self):
         return self._handle if self.is_connected() else None
 
-    def registry(self, name: str) -> Registry:
-        if name not in self._registries:
-            raise KeyError(f"Registry with key '{name}' does not exist.")
-        return self._registries[name]
-
-    def provenance(self, name: str) -> Registry:
-        if name not in self._provenance:
-            raise KeyError(f"Proveance with key '{name}' does not exist.")
-        return self._provenance[name]
-
-    def log_event(self, scope: str, event: Event, dataset: str, fn: str, **payload):
+    def _record_event(self, scope: str, event: Event, dataset: str, fn: str, **payload):
         self.provenance("log").add(scope, event, dataset, fn=fn, **payload)
 
     def _emit(self, event, fn, **payload):
-        self.log_event(SCOPE.DNASTREAM, event, ".", fn, **payload)
+        self._record_event(SCOPE.DNASTREAM, event, ".", fn, **payload)
 
-    def register_hooks(self):
+    def _register_hooks(self):
         for _, reg in self._registries.items():
-            reg.register_hook(self.log_event)
+            reg.register_hook(self._record_event)
