@@ -88,7 +88,11 @@ class DNAStream:
 
         raise AttributeError(name)
 
-    def create(self) -> None:
+    def set_mode(self, mode: str):
+        mode = self._validate_mode(mode)
+        self.mode = mode
+
+    def create(self, patient_id="") -> None:
         """Create and initialize a new DNAStream HDF5 file.
 
         Requires mode 'x' or 'w-' (fail if the file already exists).
@@ -113,7 +117,7 @@ class DNAStream:
 
         # Create the file and initialize the DNAStream layout
         self._handle = h5py.File(name=self.path, mode=self.mode)
-        self._initialize_new_file()
+        self._initialize_new_file(patient_id=patient_id)
 
         # Create required datasets for registries/provenance
         self._load_provenance(strict=True)
@@ -319,7 +323,7 @@ class DNAStream:
 
             self._registries[key] = reg
 
-    def _initialize_new_file(self) -> None:
+    def _initialize_new_file(self, patient_id="") -> None:
         """Initialize the DNAStream layout on an already-open, empty HDF5 handle."""
         # Safety: only initialize empty files/handles
         if len(self.handle.keys()) != 0 or len(self.handle.attrs) != 0:
@@ -342,7 +346,7 @@ class DNAStream:
         )
 
         # Domain
-        self.handle.attrs["patient_id"] = ""
+        self.handle.attrs["patient_id"] = patient_id
 
         # Reserved top-level groups
         for grp in (
