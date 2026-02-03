@@ -16,7 +16,10 @@ def test_add_variants_from_maf(dnastream_obj, temp_maf):
     dnastream_obj.io.add_variants_from_maf(temp_maf)
     assert len(dnastream_obj.variant) == 2
 
-    dnastream_obj.io.add_variants_from_maf([temp_maf])
+    dnastream_obj.io.add_variants_from_maf([temp_maf], allow_duplicate_labels=True)
+    assert len(dnastream_obj.variant) == 4
+
+    dnastream_obj.io.add_variants_from_maf([temp_maf], allow_duplicate_labels=False)
     assert len(dnastream_obj.variant) == 4
 
 
@@ -25,7 +28,14 @@ def test_add_samples_from_csv(dnastream_obj, temp_sample_csv):
     dnastream_obj.io.add_samples_from_files(temp_sample_csv)
     assert len(dnastream_obj.sample) == 2
 
-    dnastream_obj.io.add_samples_from_files([temp_sample_csv])
+    dnastream_obj.io.add_samples_from_files(
+        [temp_sample_csv], allow_duplicate_labels=True
+    )
+    assert len(dnastream_obj.sample) == 4
+
+    dnastream_obj.io.add_samples_from_files(
+        [temp_sample_csv], allow_duplicate_labels=False
+    )
     assert len(dnastream_obj.sample) == 4
 
 

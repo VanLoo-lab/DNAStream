@@ -84,7 +84,7 @@ def temp_registry_schema():
         version="1.0.1",
         label_from=("variable",),
         label_required=True,
-        label_builder=lambda x: str(x[0]).lower(),
+        label_builder=lambda x: str(x).lower(),
         label_normalizer=lambda x: str(x),
     )
 
@@ -105,7 +105,7 @@ def temp_registry(registry_obj, temp_data_schema):
 def dnastream_obj(temp_h5_file):
     """Provides a connected DNAStream instance for testing."""
     ds = DNAStream(str(temp_h5_file), mode="x")
-    ds._connect()
+    ds.create()
     try:
         yield ds
     finally:

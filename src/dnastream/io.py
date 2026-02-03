@@ -120,6 +120,7 @@ class IO:
         *,
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_new: bool = True,
+        allow_duplicate_labels: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ) -> None:
@@ -139,6 +140,7 @@ class IO:
             registry,
             column_mapping=column_mapping,
             activate_new=activate_new,
+            allow_duplicate_labels=allow_duplicate_labels,
             delimiter=delimiter,
             **kwargs,
         )
@@ -149,6 +151,7 @@ class IO:
         *,
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_new: bool = True,
+        allow_duplicate_labels: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ) -> None:
@@ -177,6 +180,7 @@ class IO:
             registry_name="variant",
             column_mapping=column_mapping,
             activate_new=activate_new,
+            allow_duplicate_labels=allow_duplicate_labels,
             delimiter=delimiter,
             **kwargs,
         )
@@ -194,6 +198,7 @@ class IO:
         *,
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_new: bool = True,
+        allow_duplicate_labels: bool = False,
         delimiter: str = ",",
         **kwargs,
     ) -> None:
@@ -222,6 +227,7 @@ class IO:
             registry,
             column_mapping=column_mapping,
             activate_new=activate_new,
+            allow_duplicate_labels=allow_duplicate_labels,
             delimiter=delimiter,
             **kwargs,
         )
@@ -308,6 +314,7 @@ class IO:
         registry: Registry,
         column_mapping: Optional[Mapping[str, str]],
         activate_new: bool = True,
+        allow_duplicate_labels: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ):
@@ -331,7 +338,11 @@ class IO:
             )
 
         if rows:
-            registry.add(rows, activate_new=activate_new)
+            registry.add(
+                rows,
+                activate_new=activate_new,
+                allow_duplicate_labels=allow_duplicate_labels,
+            )
 
     @staticmethod
     def parse_csv(
