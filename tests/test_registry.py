@@ -116,7 +116,7 @@ def test_add_duplicate_rows_activated_properly(
     """
     Test that new rows with duplicate labels are actived/activated properly according to the Registry contract.
     - test that new rows are activated by default
-    - test that old rows with dup labels stay activated and new rows are added but not activated when activate_new=False
+    - test that old rows with dup labels stay activated and new rows are added but not activated when activate_newest=False
     - test that new rows are activated when dup labels exist and old rows with duplicate labels are deactivated
     """
     labs = [temp_registry_schema.make_label(mydict) for mydict in temp_data_rows]
@@ -129,13 +129,13 @@ def test_add_duplicate_rows_activated_properly(
 
     registry_obj.validate()
 
-    registry_obj.add(temp_data_rows, activate_new=False, allow_duplicate_labels=True)
+    registry_obj.add(temp_data_rows, activate_newest=False, allow_duplicate_labels=True)
     assert len(registry_obj) == 2 * len(temp_data_rows)
     assert not registry_obj._cache_valid
 
     registry_obj.validate()
 
-    registry_obj.add(temp_data_rows, activate_new=True, allow_duplicate_labels=True)
+    registry_obj.add(temp_data_rows, activate_newest=True, allow_duplicate_labels=True)
     assert len(registry_obj) == 3 * len(temp_data_rows)
     df = registry_obj.get(labs, by="label", mode="active_only")
     registry_obj.validate()
@@ -254,7 +254,7 @@ def test_resolve_ids(registry_obj, temp_data_rows, temp_registry_schema):
     assert id is None
 
     # #ensure lookup only returns the active label
-    # registry_obj.add(temp_data_rows, temp_registry_schema, activate_new=False)
+    # registry_obj.add(temp_data_rows, temp_registry_schema, activate_newest=False)
     # ids = registry_obj.resolve_ids(labs)
     # assert len(ids) ==len(temp_data_rows)
     # assert ids[0] == id
@@ -281,7 +281,7 @@ def test_resolve_labels(registry_obj, temp_data_rows, temp_registry_schema):
     assert reg_label is None
 
     # ensure resolve only returns the active label
-    registry_obj.add(temp_data_rows, activate_new=False)
+    registry_obj.add(temp_data_rows, activate_newest=False)
     reg_labels = registry_obj.resolve_labels(ids)
     assert len(labs) == len(reg_labels)
     assert labs[0] == reg_labels[0]
@@ -508,11 +508,13 @@ def test_add_duplicate_labels_false(registry_obj, temp_data_rows):
     add duplicate labels to the registry.
     """
 
-    registry_obj.add(temp_data_rows, activate_new=True)
+    registry_obj.add(temp_data_rows, activate_newest=True)
     assert len(registry_obj) == len(temp_data_rows)
 
-    registry_obj.add(temp_data_rows, activate_new=True, allow_duplicate_labels=False)
+    registry_obj.add(temp_data_rows, activate_newest=True, allow_duplicate_labels=False)
     assert len(registry_obj) == len(temp_data_rows)
 
-    registry_obj.add(temp_data_rows, activate_new=False, allow_duplicate_labels=False)
+    registry_obj.add(
+        temp_data_rows, activate_newest=False, allow_duplicate_labels=False
+    )
     assert len(registry_obj) == len(temp_data_rows)

@@ -69,12 +69,112 @@ class IO:
     def ds(self):
         return self._ds
 
+    def add_variants_from_maf(
+        self,
+        fname: Sequence[str] | str,
+        *,
+        column_mapping: Optional[Mapping[str, str]] = None,
+        activate_newest: bool = True,
+        allow_duplicate_labels: bool = False,
+        delimiter: str = "\t",
+        **kwargs,
+    ) -> None:
+        """Add one or more MAF files to the 'variant' registry.
+
+        Parameters
+        ----------
+        fname : list[str] or str
+            Path(s) to MAF files.
+        column_mapping : Mapping[str, str] or None, optional
+            Mapping from file headers to registry field names.
+        activate_newest : bool, optional
+            Passed through to Registry.add(...).
+        allow_duplicate_labels: bool, optional
+            Whether to allow duplicate labels to be added to the Registry.
+        delimiter : str, optional
+            Delimiter for the input file (default tab for MAF).
+        **kwargs
+            Forwarded to csv.DictReader.
+
+        Returns
+        -------
+        None
+        """
+
+        self._add_from_maf(
+            fname=fname,
+            registry_name="variant",
+            column_mapping=column_mapping,
+            activate_newest=activate_newest,
+            allow_duplicate_labels=allow_duplicate_labels,
+            delimiter=delimiter,
+            **kwargs,
+        )
+        self.ds._record_event(
+            scope=SCOPE.IO,
+            event=EVENTS.APPEND,
+            dataset="",
+            fn=_qualname(self.add_variants_from_maf),
+            fname=fname,
+        )
+
+    def add_samples_from_files(
+        self,
+        fname: Sequence[str] | str,
+        *,
+        column_mapping: Optional[Mapping[str, str]] = None,
+        activate_newest: bool = True,
+        allow_duplicate_labels: bool = False,
+        delimiter: str = ",",
+        **kwargs,
+    ) -> None:
+        """Add one or more sample files to the 'sample' registry.
+
+        Parameters
+        ----------
+        fname : list[str] or str
+            Path(s) to sample files.
+        column_mapping : Mapping[str, str] or None, optional
+            Mapping from file headers to registry field names.
+        activate_newest : bool, optional
+            Passed through to Registry.add(...).
+        allow_duplicate_labels: bool, optional
+            Whether to allow duplicate labels to be added to the Registry.
+        delimiter : str, optional
+            Delimiter for the input file (default tab for MAF).
+        **kwargs
+            Forwarded to csv.DictReader.
+
+        Returns
+        -------
+        None
+        """
+        registry = getattr(self.ds, "sample")
+        self._add_files_to_registry(
+            fname,
+            registry,
+            column_mapping=column_mapping,
+            activate_newest=activate_newest,
+            allow_duplicate_labels=allow_duplicate_labels,
+            delimiter=delimiter,
+            **kwargs,
+        )
+
+        self.ds._record_event(
+            scope=SCOPE.IO,
+            event=EVENTS.APPEND,
+            dataset="",
+            fn=_qualname(self.add_samples_from_files),
+            fname=fname,
+        )
+
     def add_snps_from_maf(
         self,
         fname: Sequence[str] | str,
         *,
         column_mapping: Optional[Mapping[str, str]] = None,
-        activate_new: bool = True,
+        activate_newest: bool = True,
+        allow_duplicate_labels: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ):
@@ -86,8 +186,10 @@ class IO:
             Path(s) to MAF files.
         column_mapping : Mapping[str, str] or None, optional
             Mapping from file headers to registry field names.
-        activate_new : bool, optional
+        activate_newest : bool, optional
             Passed through to Registry.add(...).
+        allow_duplicate_labels: bool, optional
+            Whether to allow duplicate labels to be added to the Registry.
         delimiter : str, optional
             Delimiter for the input file (default tab for MAF).
         **kwargs
@@ -101,7 +203,8 @@ class IO:
             fname=fname,
             registry_name="snp",
             column_mapping=column_mapping,
-            activate_new=activate_new,
+            activate_newest=activate_newest,
+            allow_duplicate_labels=allow_duplicate_labels,
             delimiter=delimiter,
             **kwargs,
         )
@@ -113,13 +216,59 @@ class IO:
             fname=fname,
         )
 
+    @staticmethod
+    def parse_csv(
+        fname, *, column_mapping: Mapping[str, str] | None = None, **kwargs
+    ) -> list[dict]:
+        """Helper method to parse a CSV file.
+
+        Parameters
+        ----------
+        fname :  str
+            Path(s) to sample files.
+        column_mapping : Mapping[str, str] or None, optional
+            Mapping from file headers to returned dictionary key names
+        **kwargs
+            Forwarded to csv.DictReader.
+
+        Returns
+        -------
+        list[dict] : the parsed data in the file
+        """
+        return IO._parse_file(
+            fname, columns=None, column_mapping=column_mapping, delimiter=",", **kwargs
+        )
+
+    @staticmethod
+    def parse_tsv(
+        fname, *, column_mapping: Mapping[str, str] | None = None, **kwargs
+    ) -> list[dict]:
+        """Helper method to parse a tab delimited file.
+
+        Parameters
+        ----------
+        fname : str
+            Path(s) to sample files.
+        column_mapping : Mapping[str, str] or None, optional
+            Mapping from file headers to returned dictionary key names
+        **kwargs
+            Forwarded to csv.DictReader.
+
+        Returns
+        -------
+        list[dict] : the parsed data in the file
+        """
+        return IO._parse_file(
+            fname, columns=None, column_mapping=column_mapping, delimiter="\t", **kwargs
+        )
+
     def _add_from_maf(
         self,
         fname: Sequence[str] | str,
         registry_name: Literal["snp", "variant"] = "variant",
         *,
         column_mapping: Optional[Mapping[str, str]] = None,
-        activate_new: bool = True,
+        activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
         delimiter: str = "\t",
         **kwargs,
@@ -139,105 +288,10 @@ class IO:
             fname,
             registry,
             column_mapping=column_mapping,
-            activate_new=activate_new,
+            activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
             delimiter=delimiter,
             **kwargs,
-        )
-
-    def add_variants_from_maf(
-        self,
-        fname: Sequence[str] | str,
-        *,
-        column_mapping: Optional[Mapping[str, str]] = None,
-        activate_new: bool = True,
-        allow_duplicate_labels: bool = False,
-        delimiter: str = "\t",
-        **kwargs,
-    ) -> None:
-        """Add one or more MAF files to the 'variant' registry.
-
-        Parameters
-        ----------
-        fname : list[str] or str
-            Path(s) to MAF files.
-        column_mapping : Mapping[str, str] or None, optional
-            Mapping from file headers to registry field names.
-        activate_new : bool, optional
-            Passed through to Registry.add(...).
-        delimiter : str, optional
-            Delimiter for the input file (default tab for MAF).
-        **kwargs
-            Forwarded to csv.DictReader.
-
-        Returns
-        -------
-        None
-        """
-
-        self._add_from_maf(
-            fname=fname,
-            registry_name="variant",
-            column_mapping=column_mapping,
-            activate_new=activate_new,
-            allow_duplicate_labels=allow_duplicate_labels,
-            delimiter=delimiter,
-            **kwargs,
-        )
-        self.ds._record_event(
-            scope=SCOPE.IO,
-            event=EVENTS.APPEND,
-            dataset="",
-            fn=_qualname(self.add_variants_from_maf),
-            fname=fname,
-        )
-
-    def add_samples_from_files(
-        self,
-        fname: Sequence[str] | str,
-        *,
-        column_mapping: Optional[Mapping[str, str]] = None,
-        activate_new: bool = True,
-        allow_duplicate_labels: bool = False,
-        delimiter: str = ",",
-        **kwargs,
-    ) -> None:
-        """Add one or more sample files to the 'sample' registry.
-
-        Parameters
-        ----------
-        fname : list[str] or str
-            Path(s) to sample files.
-        column_mapping : Mapping[str, str] or None, optional
-            Mapping from file headers to registry field names.
-        activate_new : bool, optional
-            Passed through to Registry.add(...).
-        delimiter : str, optional
-            Delimiter for the input file (default tab for MAF).
-        **kwargs
-            Forwarded to csv.DictReader.
-
-        Returns
-        -------
-        None
-        """
-        registry = getattr(self.ds, "sample")
-        self._add_files_to_registry(
-            fname,
-            registry,
-            column_mapping=column_mapping,
-            activate_new=activate_new,
-            allow_duplicate_labels=allow_duplicate_labels,
-            delimiter=delimiter,
-            **kwargs,
-        )
-
-        self.ds._record_event(
-            scope=SCOPE.IO,
-            event=EVENTS.APPEND,
-            dataset="",
-            fn=_qualname(self.add_samples_from_files),
-            fname=fname,
         )
 
     @staticmethod
@@ -313,7 +367,7 @@ class IO:
         fname: Sequence[str] | str,
         registry: Registry,
         column_mapping: Optional[Mapping[str, str]],
-        activate_new: bool = True,
+        activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
         delimiter: str = "\t",
         **kwargs,
@@ -340,52 +394,6 @@ class IO:
         if rows:
             registry.add(
                 rows,
-                activate_new=activate_new,
+                activate_newest=activate_newest,
                 allow_duplicate_labels=allow_duplicate_labels,
             )
-
-    @staticmethod
-    def parse_csv(
-        fname, *, column_mapping: Mapping[str, str] | None = None, **kwargs
-    ) -> list[dict]:
-        """Helper method to parse a CSV file.
-
-        Parameters
-        ----------
-        fname :  str
-            Path(s) to sample files.
-        column_mapping : Mapping[str, str] or None, optional
-            Mapping from file headers to returned dictionary key names
-        **kwargs
-            Forwarded to csv.DictReader.
-
-        Returns
-        -------
-        list[dict] : the parsed data in the file
-        """
-        return IO._parse_file(
-            fname, columns=None, column_mapping=column_mapping, delimiter=",", **kwargs
-        )
-
-    @staticmethod
-    def parse_tsv(
-        fname, *, column_mapping: Mapping[str, str] | None = None, **kwargs
-    ) -> list[dict]:
-        """Helper method to parse a tab delimited file.
-
-        Parameters
-        ----------
-        fname : str
-            Path(s) to sample files.
-        column_mapping : Mapping[str, str] or None, optional
-            Mapping from file headers to returned dictionary key names
-        **kwargs
-            Forwarded to csv.DictReader.
-
-        Returns
-        -------
-        list[dict] : the parsed data in the file
-        """
-        return IO._parse_file(
-            fname, columns=None, column_mapping=column_mapping, delimiter="\t", **kwargs
-        )

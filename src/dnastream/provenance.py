@@ -1,18 +1,15 @@
 from __future__ import annotations
 import json
-from dataclasses import dataclass
 from datetime import datetime, timezone
 import getpass
 import uuid
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 from .schema import Schema
 import h5py
 import numpy as np
-
 from ._h5base import H5Dataset
 from .constants import EVENTS, Event, Scope
-
-from .utils import _qualname, decode_arr
+from .utils import decode_arr
 
 
 class Provenance(H5Dataset):
@@ -48,25 +45,21 @@ class Provenance(H5Dataset):
         for row in self._ds():
             yield decode_arr(row)
 
-    @staticmethod
-    def _init_scalar(dtype: np.dtype) -> np.ndarray:
-        """Create a scalar structured array and initialize string-like fields."""
-        row = np.zeros((), dtype=dtype)
-        if dtype.names is not None:
-            for name in dtype.names:
-                kind = dtype[name].kind
-                if kind in ("O", "U"):
-                    row[name] = ""
-                elif kind == "S":
-                    row[name] = b""
-        return row
-
     def create(
         self,
         schema: Schema,
         **kwargs,
     ) -> h5py.Dataset:
-        """Create a Provenance dataset"""
+        """Create a Provenance dataset.
+
+        schema : Schema
+            The schema for the Provenance object to be created
+
+        Notes
+        -----
+        Forces provenance logs to be 1-d datasets.
+
+        """
         super().create(schema=schema, shape=(0,), **kwargs)
 
     def add(
@@ -81,12 +74,14 @@ class Provenance(H5Dataset):
 
         Parameters
         ----------
-        event
+        scope : str
+            The DNAStream scope of where the modification occurred.
+        event : str
             One of the allowed provenance event strings (see ``dnastream.constants.EVENTS``).
         dataset
             Full HDF5 path of the dataset being acted on (e.g. ``"/registry/variant"``).
         fn
-            Optional callable responsible for the action; recorded as ``source``.
+            string callable responsible for the action; recorded as ``source``.
         **payload
             Arbitrary event metadata; stored as a JSON string in ``info``.
         """
@@ -172,7 +167,14 @@ class Provenance(H5Dataset):
                 raise ValueError(msg)
 
     def register_hook(self, *args, **kwargs):
-        raise RuntimeError("Hooks are not supported on provenance datasets.")
+        """Not supported for Provenance objects.
+
+        Raises
+        ------
+        RuntimeError : if `register_hook` is called on a provenance object.
+
+        """
+        raise RuntimeError("Hooks are not supported on provenance objects.")
 
     def _emit(self, *args, **kwargs):
         raise RuntimeError(
@@ -180,3 +182,16 @@ class Provenance(H5Dataset):
             "If you meant to log something, call ds.provenance('changes').add(...) "
             "from the *caller*, not from inside Provenance."
         )
+
+    @staticmethod
+    def _init_scalar(dtype: np.dtype) -> np.ndarray:
+        """Create a scalar structured array and initialize string-like fields."""
+        row = np.zeros((), dtype=dtype)
+        if dtype.names is not None:
+            for name in dtype.names:
+                kind = dtype[name].kind
+                if kind in ("O", "U"):
+                    row[name] = ""
+                elif kind == "S":
+                    row[name] = b""
+        return row

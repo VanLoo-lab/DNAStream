@@ -180,8 +180,41 @@ class Registry(H5Dataset):
             schema_hash=schema.hash(),
         )
 
+    def open(
+        self,
+        schema: Schema | None = None,
+        *,
+        strict: bool = True,
+    ) -> h5py.Dataset:
+        """Open the underlying HDF5 dataset and populate lookup caches.
+
+        Parameters
+        ----------
+        schema : Schema or None, optional
+            Schema used to validate schema identity. If None, uses the cached schema from the last successful create/open.
+        strict : bool, optional
+            If True, enforce strict schema identity checks.
+
+        Returns
+        -------
+        h5py.Dataset
+            Open dataset handle.
+
+        Raises
+        ------
+        ValueError
+            If `mode` is invalid.
+        """
+
+        ds = super().open(schema, strict=strict)
+        self._load_cache()
+        return ds
+
     def add(
-        self, rows: list[dict], activate_new: bool = True, allow_duplicate_labels=False
+        self,
+        rows: list[dict],
+        activate_newest: bool = True,
+        allow_duplicate_labels=False,
     ) -> None:
         """Append rows to the registry (append-only insert).
 
@@ -189,7 +222,7 @@ class Registry(H5Dataset):
         ----------
         rows : list[dict]
             Records to insert. Keys matching dataset fields will be written.
-        activate_new : bool, optional
+        activate_newest : bool, optional
             Collision policy when an incoming label matches an *active* existing label.
 
             - If True (default): deactivate the existing active row and keep the new row
@@ -199,7 +232,7 @@ class Registry(H5Dataset):
             Whether to allow duplicate labels to be added to the registry
 
             - If True: data associated wtih labels that collide with existing labels will be added
-            to the registry and activation will be set according to `activate_new`.
+            to the registry and activation will be set according to `activate_newest`.
             - If False (default), data associated with existing labels will not be added to the registry.
 
         Returns
@@ -214,10 +247,11 @@ class Registry(H5Dataset):
 
         Notes
         -----
-        The following fields are auto-populated when present in the dataset:
+        The following fields are auto-populated:
 
         - ``id``: UUID4 string
         - ``idx``: on-disk row index
+        - ``active``: activatation status of entity
         - ``created_at``: UTC ISO 8601 timestamp ending in ``"Z"``
         - ``created_by``: current username
         """
@@ -294,7 +328,7 @@ class Registry(H5Dataset):
 
         # Apply collision policy
         if collisions and allow_duplicate_labels:
-            if activate_new:
+            if activate_newest:
                 # Deactivate existing active rows
                 self.deactivate_labels([labels[new_i] for new_i, _ in collisions])
             else:
@@ -331,6 +365,28 @@ class Registry(H5Dataset):
         self._emit(EVENTS.APPEND, _qualname(self.add), n_add=n_add)
 
     def update(self, rows: list[dict], *, warn_missing=True) -> None:
+        """Update the metadata of existing registered entities.
+
+        rows : list[dict]
+            Records to update. Keys matching dataset fields will be updated.
+        warn_missing : bool
+            Whether or not to warn user if a provided ``id`` is not in the registry.
+
+        Returns
+        -------
+        None
+
+        Notes
+        ------
+        Due to Registry policy allowing duplicate labels, the ``id`` must be provided as part of the
+        dictionary updates. use `resolve_ids(...)` to look up the ids for each activated label. Use `find_ids(...)`
+        to look up ``id`` in the event of duplicate labels.
+
+
+        Raises
+        -------
+        ValueError : if ``id`` is not a key in a dictionary in one of the input rows to be edited.
+        """
         ds = self.open()
         names = set(ds.dtype.names or ())
 
@@ -438,6 +494,10 @@ class Registry(H5Dataset):
         numpy.ndarray
             Array of ids aligned to input order.
 
+        Notes
+        ------
+        Only resolves ids for active labels. Use `find_ids(...)` to find all all ids associated with a given label.
+
         """
         # validate the input
 
@@ -466,6 +526,7 @@ class Registry(H5Dataset):
         -------
         numpy.ndarray
             Array of labels aligned to input order.
+
         """
 
         is_scalar, sel = self._validate_id_selector(ids)
@@ -810,36 +871,6 @@ class Registry(H5Dataset):
         inv = np.empty_like(order)
         inv[order] = np.arange(order.size)
         return df.iloc[inv].reset_index(drop=True)
-
-    def open(
-        self,
-        schema: Schema | None = None,
-        *,
-        strict: bool = True,
-    ) -> h5py.Dataset:
-        """Open the underlying HDF5 dataset and populate lookup caches.
-
-        Parameters
-        ----------
-        schema : Schema or None, optional
-            Schema used to validate schema identity. If None, uses the cached schema from the last successful create/open.
-        strict : bool, optional
-            If True, enforce strict schema identity checks.
-
-        Returns
-        -------
-        h5py.Dataset
-            Open dataset handle.
-
-        Raises
-        ------
-        ValueError
-            If `mode` is invalid.
-        """
-
-        ds = super().open(schema, strict=strict)
-        self._load_cache()
-        return ds
 
     def _invalidate_cache(self) -> None:
         """Invalidate all cached lookup mappings.

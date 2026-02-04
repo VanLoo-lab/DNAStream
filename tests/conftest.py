@@ -1,11 +1,9 @@
-import os
 import pytest
 import h5py
 from dnastream import DNAStream
 from dnastream.registry import Registry
 from dnastream.schema import Schema, Field
 import numpy as np
-from textwrap import dedent
 
 
 STR_DTYPE = h5py.string_dtype("utf-8")

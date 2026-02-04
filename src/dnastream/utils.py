@@ -33,8 +33,6 @@ def timeit(func):
 
     return wrapper
 
-    # Helper: normalize label values (handle bytes coming from HDF5)
-
 
 def as_str(x, *, encoding="utf-8", errors="strict") -> str:
     if isinstance(x, np.ndarray) and x.shape == ():

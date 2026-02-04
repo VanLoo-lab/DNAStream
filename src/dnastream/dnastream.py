@@ -1,7 +1,6 @@
 import h5py
 import os
 import getpass
-import warnings
 import socket
 from datetime import datetime, timezone
 import uuid
@@ -10,11 +9,11 @@ from ._builtin_schemas import REGISTRY_SCHEMAS, PROVENANCE_SCHEMAS
 from .provenance import Provenance
 from .io import IO
 import logging
-from typing import Literal, Callable, Any
+from typing import Literal
 
-from .constants import PACKAGE_VERSION, Event, SCOPE, EVENTS
+from .constants import Event, SCOPE, EVENTS
 
-from .utils import require_file_exists, _qualname, package_version
+from .utils import _qualname, package_version
 
 
 class DNAStream:
@@ -28,8 +27,6 @@ class DNAStream:
         """
 
         self.path = path
-
-        # mode = self._validate_mode(mode)
 
         self._mode = None
 
@@ -88,10 +85,6 @@ class DNAStream:
 
         raise AttributeError(name)
 
-    # @staticmethod
-    # def file_exists(self, path):
-    #     return os.path.isfile(self.path)
-
     def set_patient_id(self, patient_id):
         """
         Update the patient_id in the HDF5 file.
@@ -109,11 +102,21 @@ class DNAStream:
         )
 
     def registry(self, name: str) -> Registry:
+        """Returns a reference to a Registry object by name.
+
+        name : str
+        The name of the requested registry.
+        """
         if name not in self._registries:
             raise KeyError(f"Registry with key '{name}' does not exist.")
         return self._registries[name]
 
-    def provenance(self, name: str) -> Registry:
+    def provenance(self, name: str) -> Provenance:
+        """Returns a reference to a Provenance object by name.
+
+        name : str
+        The name of the requested provenance object.
+        """
         if name not in self._provenance:
             raise KeyError(f"Proveance with key '{name}' does not exist.")
         return self._provenance[name]
@@ -137,7 +140,7 @@ class DNAStream:
 
         Raises
         ------
-        FileExistsError
+        FileExistsError : if a file exists at the provided path
         """
         if os.path.isfile(path):
             raise FileExistsError(
@@ -203,6 +206,7 @@ class DNAStream:
             raise
 
     def is_connected(self) -> bool:
+        """Returns a boolean indicating whether or not the stream is connected.."""
         return (
             self._handle is not None
             and getattr(self._handle, "id", None) is not None
@@ -248,7 +252,7 @@ class DNAStream:
 
     @property
     def handle(self):
-        """Return the live HDF5 handle; raise if not connected."""
+        """Return the live DNAStream HDF5 handle; raise if not connected."""
         if self._handle is None:
             raise RuntimeError(
                 "DNAStream is not connected. Call connect() or use it as a context manager."
@@ -265,9 +269,6 @@ class DNAStream:
 
         if self.verbose:
             self.logger.info(f"Connection to DNAStream file '{self.path}' closed.")
-
-    # def exists(self):
-    #     return os.path.isfile(self.path) and self.is_valid()
 
     def __enter__(self):
         """Enter a context where the underlying HDF5 handle is open.
@@ -352,9 +353,9 @@ class DNAStream:
 
         # Recommended
         self.handle.attrs["file_uuid"] = str(uuid.uuid4())
-        self.handle.attrs["software_version"] = (
-            PACKAGE_VERSION  # or package __version__
-        )
+        # self.handle.attrs["software_version"] = (
+        #     PACKAGE_VERSION  # or package __version__
+        # )
 
         # Domain
         self.handle.attrs["patient_id"] = patient_id
