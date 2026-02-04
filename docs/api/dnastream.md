@@ -1,3 +1,3 @@
-# DNAStream API Reference
+# DNAStream API
 
 ::: dnastream.DNAStream

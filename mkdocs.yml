@@ -10,17 +10,24 @@ theme:
 
 nav:
   - Home: index.md
+  - Getting Started: installation.md
   - Design: 
     - Charter: design/CHARTER.md
     - Model: design/MODEL.md
     - Specifications: design/SPECS.md
     - Invariants: design/INVARIANTS.md
     - Registry: design/REGISTRY.md
+  - Tutorials:
+    - Quickstart: tutorials/00_quickstart.ipynb
+    - DNAStream : tutorials/01_dnastream.ipynb
+    - Registry: tutorials/02_registry.ipynb
   - API:
-      # - DNAStream: api/dnastream.md
+      - DNAStream: api/dnastream.md
       - Registry: api/registry.md
-      - Schema: api/schema.md
+      - Provenance: api/provenance.md
       - IO: api/io.md
+      - Schema: api/schema.md
+
 
 
 plugins:
@@ -33,3 +40,9 @@ plugins:
           options:
             docstring_style: numpy
             show_source: true
+  - mkdocs-jupyter:
+      include_source: true
+      execute: false
+      
+      # execute: false   # recommended for docs builds; run notebooks separately
+      # kernel_name: python3

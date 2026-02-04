@@ -53,16 +53,19 @@ class DNAStream:
         attrs = self.handle.attrs
 
         fmt = attrs.get("dnastream_format", None)
-        schema = attrs.get("schema_version", None)
+        schema = attrs.get("package_version", None)
         creator = attrs.get("created_by", None)
         creator_host = attrs.get("created_on_host", None)
         patient = attrs.get("patient_id", None)
         created_at = attrs.get("created_at", None)
 
-        mystr = f"{fmt} for Patient {patient} with Schema Version: {schema}\n"
-        mystr += f"File path: {self.path}\n"
+        mystr = f"{fmt} for Patient {patient} with Package Version: {schema}\n"
+        mystr += f"File path: '{self.path}'\n"
         mystr += f"Created by: {creator} on host {creator_host} at {created_at}\n"
-        mystr += f"Mode: {self.mode}"
+        mystr += f"Mode: '{self.mode}'"
+        mystr += "\nDataset groups:\n"
+        for table, ref in self.handle.items():
+            mystr += f"\t'{table}': {len(ref)} tables\n"
 
         return mystr
 

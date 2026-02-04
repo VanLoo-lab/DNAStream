@@ -65,7 +65,7 @@ To run the test suite:
 pip install ".[test]"
 ```
 
-For developers, all of the above dependences plus:
+For developers, all of the above dependencies plus:
   - `black>=24`
 
 ```bash

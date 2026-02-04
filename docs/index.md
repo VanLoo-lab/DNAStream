@@ -1,70 +1,44 @@
-# Welcome to DNAStream
-DNAStream is a multisample, multiplatform DNA sequencing HDF5 data structure for integrated downstream evolutionary analysis. 
+# DNAStream
 
-For the source code, visit [https://github.mdanderson.org/llweber/DNAStream](https://github.mdanderson.org/llweber/DNAStream).
+DNAStream is an HDF5-backed, multi-modal data structure for organizing DNA sequencing data and downstream evolutionary analysis. It provides compact on-disk storage, fast partial reads, and a structured way to track entities, links, and changes over time.
 
-See [https://pages.github.mdanderson.org/llweber/DNAStream/](https://pages.github.mdanderson.org/llweber/DNAStream/) for the API.
+## Beta scope
+
+This beta release focuses on:
+- **Registry**: typed registries with built-in schemas for core entities (e.g., samples, variants, SNPs) and activation status
+- **Provenance**: lightweight event logging for dataset changes (**create**, **append**, **modify**, **designate**)
+
+Expect the API and on-disk layout to evolve during beta.
+
+![overview](assets/dnastream.png)
+*Beta includes Registry + Provenance. Measurements and Results are planned (marked with * in the diagram).*
+
+## Key features
+
+- **Efficient storage and access** via a chunked HDF5 file with lazy reads for large cohorts
+- **Entity registries with schemas** to validate fields, manage activation, and support consistent linking across datasets and analyses
+- **Provenance logging** of change events to support reproducibility and collaboration
+
+## Coming soon
+
+- **Measurements** linked to registered entities (e.g., variant/total read counts, binned counts)
+- **Results** storage and retrieval (e.g., copy number calling, clonal trees)
+- **Canonical result pointers** to mark the active/preferred outputs among multiple runs
+- **Custom schemas** for specialized registries, measurements, and results
+- **Multi-user workflows** with a clear concurrency policy for write access
 
 
-![overview](images/overview.png)
 
-## Dependencies
- - `h5py`
- - `numpy`
- - `pandas`
+<!-- ## Table of Contents
+- [Dependencies](#dependencies)
+  - [Optional dependences](#optional-dependencies)
+- [Installation](#installation)
+- [Quickstart](#quickstart)
+- [Documentation](#documentation)
+- [Unit tests](#unit-tests) -->
 
-<!-- 
-## Schema (under development)
-The schema is currently underdevelopment is subject to change but below is the currently implemented or prospective design (*). 
-```
-/
-/
- ├── SNV/                     # Shared SNV index
- │   ├── labels               # Short name chr:pos:ref:alt
- │   ├── data                 # Structured array: quality scores, active
- │   ├── cluster              # Integer cluster assignments
- │   ├── log                  # Index modification log
- ├── sample/                  # Sample index
- │   ├── labels               # Sample names
- │   ├── data                 # Structured array: patient ID, source, location, file paths
- │   ├── cluster              # Integer cluster assignments
- │   ├── log                  # Index modification log
- ├── tree/
- │   ├── SNV_trees/  
- │   │   ├── trees            # Variable-length edge lists of clusters
- │   │   ├── data             # Likelihood, rank, method used to generate, etc.
- │   │   ├── labels           # Tree labels
- │   ├── CNA_trees/     
- │   │   ├── trees            # Variable-length edge lists (or Newick strings)
- │   │   ├── data             # Likelihood, rank, method used to generate, etc.
- │   │   ├── labels           # Tree labels
- ├── copy_numbers/
- │   ├── bulk/
- │   │   ├── labels           # Segment labels (chrom, start, end)
- │   │   ├── index            # Bulk-specific segment index
- │   │   ├── profile          # 3D array: (segment, sample, allele-specific CN)
- │   │   ├── logr             # 2D array: (segment, sample) logR values
- │   │   ├── baf              # 2D array: (segment, sample) B-allele frequency
- │   │   ├── log              # Modification log
- │   ├── lcm/
- │   │   ├── labels           # Segment labels
- │   │   ├── index            # LCM-specific segment index
- │   │   ├── profile          # 3D array: (segment, sample, allele-specific CN)
- │   │   ├── logr             # 2D array: (segment, sample) logR values
- │   │   ├── baf              # 2D array: (segment, sample) B-allele frequency
- │   │   ├── log              # Modification log
- │   ├── scdna/
- │   │   ├── labels           # Segment labels
- │   │   ├── index            # Single-cell segment index
- │   │   ├── profile          # (sample, segment) → allele CN tuple
- │   │   ├── log              # Modification log
- ├── read_counts/
- │   ├── variant              # 2D array: (SNV, sample) variant read counts
- │   ├── total                # 2D array: (SNV, sample) total read counts
- │   ├── log                  # Read count modifications log
- ├── metadata/
- │   ├── log                  # Metadata modifications log
- │   ├── sample_info          # Sample metadata
- │   ├── processing_parameters # Processing parameters used in analysis
 
-``` -->
+
+
+
+
