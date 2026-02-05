@@ -1,5 +1,5 @@
 site_name: DNAStream Documentation
-repo_url: https://github.mdanderson.org/llweber/DNAStream
+repo_url: https://github.com/VanLoo-lab/DNAStream
 theme:
   name: material
   logo: images/logo.png 
