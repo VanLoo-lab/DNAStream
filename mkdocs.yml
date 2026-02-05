@@ -12,12 +12,12 @@ nav:
   - Home: index.md
   - Getting Started: installation.md
   - Built-in Schemas: reference/schemas.md
-  - Design: 
-    - Charter: design/CHARTER.md
-    - Model: design/MODEL.md
-    - Specifications: design/SPECS.md
-    - Invariants: design/INVARIANTS.md
-    - Registry: design/REGISTRY.md
+  # - Design: 
+  #   - Charter: design/CHARTER.md
+  #   - Model: design/MODEL.md
+  #   - Specifications: design/SPECS.md
+  #   - Invariants: design/INVARIANTS.md
+  #   - Registry: design/REGISTRY.md
   - Tutorials:
     - Quickstart: tutorials/00_quickstart.ipynb
     - DNAStream : tutorials/01_dnastream.ipynb
