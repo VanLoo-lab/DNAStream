@@ -4,9 +4,8 @@ DNAStream is an HDF5-backed, multi-modal data structure for organizing DNA seque
 
 ## Beta scope
 
-This beta release focuses on:
-- **Registry**: typed registries with built-in schemas for core entities (e.g., samples, variants, SNPs) and activation status
-- **Provenance**: lightweight event logging for dataset changes (**create**, **append**, **modify**, **designate**)
+- **Registry**: typed registries with built-in schemas for core entities (e.g., samples, variants, SNPs) and activation status   
+- **Provenance**: lightweight event logging for dataset changes (**create**, **append**, **modify**, **designate**) 
 
 Expect the API and on-disk layout to evolve during beta.
 
