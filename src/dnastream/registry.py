@@ -6,7 +6,7 @@ The primary entry point is :class:`~dnastream.registry.Registry`.
 """
 
 from __future__ import annotations
-from typing import Mapping
+from typing import Mapping, Literal
 import uuid
 import getpass
 from datetime import datetime, timezone
@@ -638,7 +638,7 @@ class Registry(H5Dataset):
         self,
         arr: np.ndarray | None = None,
         *,
-        mode: str = "all",
+        mode: Literal["all", "active_only", "non_active"] = "all",
         **kwargs,
     ) -> pd.DataFrame:
         """Materialize registry rows as a pandas DataFrame.
@@ -677,6 +677,14 @@ class Registry(H5Dataset):
             arr = ds[idx] if idx.size else np.zeros((0,), dtype=ds.dtype)
 
         return super().to_dataframe(arr)
+
+    # def to_csv(self,
+    #     fname: str,
+    #     *,
+    #     mode: str = "all",
+    #     **kwargs):
+    #     df = self.to_dataframe(mode=mode, **kwargs)
+    #     df.to_csv(fname, **kwargs)
 
     def validate(self, *, strict: bool = True) -> None:
         """Validate registry invariants.
@@ -794,7 +802,7 @@ class Registry(H5Dataset):
                 warnings.warn(msg, stacklevel=2)
 
     def get(
-        self, selector=None, *, by: str | None = None, mode: str = "active_only"
+        self, selector=None, *, by: str | None = None, mode: str = "all"
     ) -> pd.DataFrame:
         """Retrieve registry rows as a pandas DataFrame.
 
