@@ -1578,6 +1578,9 @@ class Registry(H5Dataset):
             warn_missing=warn_missing,
         )
 
+        if by == "id":
+            selector = self.resolve_labels(selector)
+
         all_indices = self._select_indices(
             selector, by=by, mode="all", allow_many=True, warn_missing=False
         )
