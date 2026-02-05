@@ -40,20 +40,23 @@ To view the documentation locally:
 - `mkdocstrings[python]>=0.25`    
 
 ```bash
-pip install ".[docs]"
+#after cloning
+pip install -e ".[docs]"
 ```
 
 To run the test suite:
   - `pytest>=7`
 
 ```bash
-pip install ".[test]"
+#after cloning
+pip install -e ".[test]"
 ```
 
 For developers, all of the above dependencies plus:
   - `black>=24`
 
 ```bash
+#after cloning
 pip install -e ".[dev]"
 ```
 
