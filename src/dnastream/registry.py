@@ -1581,8 +1581,9 @@ class Registry(H5Dataset):
         if by == "id":
             selector = self.resolve_labels(selector)
 
+            selector = selector.tolist()
         all_indices = self._select_indices(
-            selector, by=by, mode="all", allow_many=True, warn_missing=False
+            selector, by="label", mode="all", allow_many=True, warn_missing=False
         )
 
         deactivations = sorted(set(all_indices) - set(activations))
