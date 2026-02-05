@@ -74,7 +74,7 @@ SAMPLE_REGISTRY_FIELDS = REGISTRY_SPINE + (
     Field("library_selection", STR_DTYPE, False, str_validator),
     # if you want fixed width here, keep it; otherwise use STR_DTYPE
     Field("library_layout", "S10", False, None),
-    Field("read_length", np.int64, False, None),
+    Field("read_length", "i4", False, None),
     Field("platform", STR_DTYPE, False, str_validator),
     Field("model", STR_DTYPE, False, str_validator),
     Field("center_name", STR_DTYPE, False, str_validator),
