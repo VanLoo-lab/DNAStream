@@ -14,7 +14,13 @@ Create a `conda/mamba` environment (recommended) and install the package from th
 ```bash
 conda create -n dnastream python=3.11
 conda activate dnastream 
-pip install "git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
+
+# With optional docs dependencies (reccommended)
+pip install "dnastream[docs] @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
+
+#Just the DNAStream package
+pip install "dnastream @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
+
 ```
 
 
