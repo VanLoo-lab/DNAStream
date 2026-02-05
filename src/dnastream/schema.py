@@ -15,8 +15,10 @@ to be serializable *by identity* (e.g., version + hash + json pairs) while
 keeping non-serializable callables (validators/label functions) in-memory.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 import json
 import hashlib
 import numpy as np
@@ -47,7 +49,7 @@ class Field:
     """
 
     name: str
-    dtype: Any  # e.g. np.dtype("i4") or "U50"
+    dtype: Any
     required: bool = True
     validator: Callable[[Any], None] | None = None  # raise on failure
 
@@ -72,9 +74,14 @@ class Schema:
     label_required : bool, default False
         If True, a non-empty label is required for each inserted record.
     label_builder : callable or None, optional
-        Callable ``label_builder(parts) -> str`` where ``parts`` is a
-        ``tuple[str, ...]`` extracted from ``label_from``. If None, defaults to
-        joining parts with ``"|"``.
+        Callable used to construct a label from the extracted components.
+
+        By default, labels are built by joining components with ``"|"``.
+
+        If provided, the builder is called as ``label_builder(*parts)`` where
+        ``parts`` are the stringified values extracted from ``label_from``.
+        For backward compatibility, builders that accept a single tuple argument
+        may also be used (they will be called as ``label_builder(parts)``).
     label_normalizer : callable or None, optional
         Callable ``label_normalizer(label) -> str`` applied after
         ``label_builder``.
@@ -97,14 +104,15 @@ class Schema:
     fields: tuple[Field, ...]
     version: str
     dtype: np.dtype = field(init=False, repr=False)
+
     label_from: tuple[str, ...] | None = None
     label_required: bool = False
-    label_builder: Callable[[tuple[str, ...]], str] | None = None
+    label_builder: Optional[Callable[..., str]] = None
     label_normalizer: Callable[[str], str] | None = None
+
     _field_by_name: dict[str, Field] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """Compute derived attributes (dtype, field index) for a frozen dataclass."""
         fb = {f.name: f for f in self.fields}
 
         if len(fb) != len(self.fields):
@@ -116,71 +124,55 @@ class Schema:
         if self.label_from and self.label_required:
             for x in self.label_from:
                 if str(x) not in fb:
-                    raise ValueError(f" label_from Field {x!r} not found in Schema.")
+                    raise ValueError(f"label_from field {x!r} not found in schema.")
 
         object.__setattr__(self, "dtype", np.dtype(list(self.get_spec())))
         object.__setattr__(self, "_field_by_name", fb)
 
     def field(self, name: str) -> Field:
-        """Return the :class:`~dnastream.schema.Field` for a given name.
-
-        Parameters
-        ----------
-        name : str
-            Field name.
-
-        Returns
-        -------
-        Field
-            The corresponding Field object.
-
-        Raises
-        ------
-        KeyError
-            If ``name`` is not present in the schema.
-        """
         try:
             return self._field_by_name[name]
         except KeyError:
             raise KeyError(f"Field {name!r} not in schema.") from None
 
     def required_names(self) -> tuple[str, ...]:
-        """Return the names of required fields.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Names of fields with ``required=True`` in schema order.
-        """
         return tuple(f.name for f in self.fields if f.required)
 
+    # -----------------------------
+    # Docs/helpers
+    # -----------------------------
+    def field_summary(self) -> list[dict[str, Any]]:
+        """Return a JSON-friendly summary of fields for documentation."""
+        out: list[dict[str, Any]] = []
+        for f in self.fields:
+            v = f.validator
+            out.append(
+                {
+                    "name": f.name,
+                    "dtype": str(f.dtype),
+                    "required": bool(f.required),
+                    "validator": (
+                        getattr(v, "__name__", None) if v is not None else None
+                    ),
+                }
+            )
+        return out
+
+    def to_markdown_table(self) -> str:
+        """Render fields as a Markdown table: name | dtype | required | validator."""
+        rows = self.field_summary()
+        cols = ("name", "dtype", "required", "validator")
+        header = "| " + " | ".join(cols) + " |"
+        sep = "| " + " | ".join(["---"] * len(cols)) + " |"
+        lines = [header, sep]
+        for r in rows:
+            lines.append("| " + " | ".join(str(r.get(c, "")) for c in cols) + " |")
+        return "\n".join(lines)
+
+    # -----------------------------
+    # Labeling
+    # -----------------------------
     def make_label(self, row: dict[str, Any]) -> str:
-        """Build a label string from an input record.
-
-        The label pipeline is:
-
-        1. Extract values from ``row`` using ``label_from``.
-        2. Convert extracted values to strings.
-        3. Call ``label_builder(parts)`` (or default join with ``"|"``).
-        4. Apply ``label_normalizer`` if provided.
-
-        Parameters
-        ----------
-        row : dict[str, Any]
-            Input record.
-
-        Returns
-        -------
-        str
-            The constructed label.
-
-        Raises
-        ------
-        ValueError
-            If ``label_from`` is None.
-        KeyError
-            If a key in ``label_from`` is missing from ``row``.
-        """
         if self.label_from is None:
             raise ValueError("Schema.label_from is None; cannot build label")
 
@@ -189,8 +181,6 @@ class Schema:
         if self.label_builder is None:
             label = "|".join(parts)
         else:
-            # Prefer calling as label_builder(*parts). If the user provided a builder
-            # that expects a single tuple argument, fall back to that calling convention.
             try:
                 label = self.label_builder(*parts)
             except TypeError:
@@ -201,66 +191,27 @@ class Schema:
 
         return label
 
-    def get_spec(self):
-        """Return the dtype specification tuple for the schema.
-
-        Returns
-        -------
-        tuple[tuple[str, Any], ...]
-            Tuple of ``(name, dtype)`` pairs in schema order.
-        """
+    # -----------------------------
+    # Identity / dtype helpers
+    # -----------------------------
+    def get_spec(self) -> tuple[tuple[str, Any], ...]:
         return tuple((field.name, field.dtype) for field in self.fields)
 
-    def get_names(self):
-        """Return field names in schema order.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Field names.
-        """
+    def get_names(self) -> tuple[str, ...]:
         return tuple(field.name for field in self.fields)
 
-    def schema_pairs(self):
-        """Return a JSON-friendly list of ``(name, dtype_str)`` pairs.
-
-        Returns
-        -------
-        list[tuple[str, str]]
-            Pairs suitable for serialization.
-        """
+    def schema_pairs(self) -> list[tuple[str, str]]:
         return [(k, str(v)) for k, v in self.get_spec()]
 
-    def get_payload(self):
-        """Return the canonical JSON payload used for hashing.
-
-        Returns
-        -------
-        str
-            Compact JSON string encoding of ``schema_pairs``.
-        """
+    def get_payload(self) -> str:
         return json.dumps(
             sorted([(k, str(v)) for k, v in self.get_spec()], key=lambda x: x[0]),
             separators=(",", ":"),
         )
 
-    def json_pairs(self):
-        """Return the canonical JSON string for this schema.
-
-        Returns
-        -------
-        str
-            JSON string encoding of the schema pairs.
-        """
+    def json_pairs(self) -> str:
         return self.get_payload()
 
-    def hash(self):
-        """Compute a stable SHA-256 hash of the schema payload.
-
-        Returns
-        -------
-        str
-            Hex digest of SHA-256 over the UTF-8 encoded payload.
-        """
+    def hash(self) -> str:
         payload = self.get_payload().encode("utf-8")
         return hashlib.sha256(payload).hexdigest()

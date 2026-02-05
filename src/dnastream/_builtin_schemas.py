@@ -1,11 +1,13 @@
 import re
 import numpy as np
+
 from .schema import Schema, Field
 from .constants import EVENTS, STR_DTYPE, SCHEMA_VERSION
 
 
 def str_validator(x):
-    pass
+    # TODO: implement if you want; for now it's a placeholder
+    return
 
 
 REGISTRY_SPINE = (
@@ -63,29 +65,26 @@ date_of_sequencing : str
 
 
 SAMPLE_REGISTRY_FIELDS = REGISTRY_SPINE + (
-    Field(
-        "sample_name",
-        STR_DTYPE,
-        True,
-        str_validator,
-    ),
-    Field("organism", STR_DTYPE, str_validator),
-    Field("library_strategy", STR_DTYPE, str_validator),
-    Field("library_source", STR_DTYPE, str_validator),
-    Field("library_selection", STR_DTYPE, str_validator),
-    Field("library_layout", "S10"),
-    Field("platform", STR_DTYPE, str_validator),
-    Field("model", STR_DTYPE, str_validator),
-    Field("center_name", STR_DTYPE, str_validator),
-    Field("run", STR_DTYPE, str_validator),
-    Field("study", STR_DTYPE, str_validator),
-    Field("coverage", "f4"),
-    Field("modality", STR_DTYPE, str_validator),
-    Field("location", STR_DTYPE, str_validator),
-    Field("bam_file_path", STR_DTYPE, str_validator),
-    Field("batch_id", STR_DTYPE, str_validator),
-    Field("reference_build", STR_DTYPE, str_validator),
-    Field("date_of_sequencing", STR_DTYPE, str_validator),
+    Field("sample_name", STR_DTYPE, True, str_validator),
+    # optional metadata fields (required=False)
+    Field("organism", STR_DTYPE, False, str_validator),
+    Field("library_strategy", STR_DTYPE, False, str_validator),
+    Field("library_source", STR_DTYPE, False, str_validator),
+    Field("library_selection", STR_DTYPE, False, str_validator),
+    # if you want fixed width here, keep it; otherwise use STR_DTYPE
+    Field("library_layout", "S10", False, None),
+    Field("platform", STR_DTYPE, False, str_validator),
+    Field("model", STR_DTYPE, False, str_validator),
+    Field("center_name", STR_DTYPE, False, str_validator),
+    Field("run", STR_DTYPE, False, str_validator),
+    Field("study", STR_DTYPE, False, str_validator),
+    Field("coverage", "f4", False, None),
+    Field("modality", STR_DTYPE, False, str_validator),
+    Field("location", STR_DTYPE, False, str_validator),
+    Field("bam_file_path", STR_DTYPE, False, str_validator),
+    Field("batch_id", STR_DTYPE, False, str_validator),
+    Field("reference_build", STR_DTYPE, False, str_validator),
+    Field("date_of_sequencing", STR_DTYPE, False, str_validator),
 )
 
 
@@ -105,13 +104,13 @@ SAMPLE_SCHEMA = Schema(
 
 
 """
-Metadata schema for a single nucleotide variants (SNV) and single nucleotide polymorphisms (SNP).
+Metadata schema for single nucleotide variants (SNV).
 
 Attributes
 ----------
 chrom : str
     Chromosome identifier (e.g., 'chr1').
-pos : int
+start_pos : int
     Genomic start position of the SNV.
 end_pos : int
     Genomic end position of the SNV.
@@ -121,7 +120,7 @@ alt_allele : str
     Alternate allele.
 hugo : str
     HUGO gene symbol.
-gene : str
+entrez_gene_id : str
     Entrez gene ID.
 filter : str
     Variant filter status (e.g., 'PASS').
@@ -134,10 +133,12 @@ dbsnp_id : str
 info : str
     Additional metadata (e.g., from INFO field in VCF/MAF).
 """
+
+
 VARIANT_REGISTRY_FIELDS = REGISTRY_SPINE + (
     Field("chrom", STR_DTYPE, False, str_validator),
-    Field("start_pos", "i8", False),
-    Field("end_pos", "i8", False),
+    Field("start_pos", "i8", False, None),
+    Field("end_pos", "i8", False, None),
     Field("ref_allele", STR_DTYPE, False, str_validator),
     Field("alt_allele", STR_DTYPE, False, str_validator),
     Field("hugo", STR_DTYPE, False, str_validator),
@@ -147,7 +148,7 @@ VARIANT_REGISTRY_FIELDS = REGISTRY_SPINE + (
     Field("dbsnp_id", STR_DTYPE, False, str_validator),
     Field("filter", STR_DTYPE, False, str_validator),
     Field("info", STR_DTYPE, False, str_validator),
-    Field("source", STR_DTYPE, False, str_validator),  # method
+    Field("source", STR_DTYPE, False, str_validator),  # method/source
 )
 
 
@@ -171,7 +172,7 @@ def build_variant_label(chrom, start_pos, ref_allele, alt_allele) -> str:
 
 
 VARIANT_SCHEMA = Schema(
-    VARIANT_REGISTRY_FIELDS,
+    fields=VARIANT_REGISTRY_FIELDS,
     version=SCHEMA_VERSION,
     label_from=("chrom", "start_pos", "ref_allele", "alt_allele"),
     label_builder=build_variant_label,
@@ -181,24 +182,23 @@ VARIANT_SCHEMA = Schema(
 
 
 SNP_FIELDS = REGISTRY_SPINE + (
-    Field("chrom", "S10", True, STR_DTYPE),
-    Field("start_pos", "i8", True, STR_DTYPE),
-    Field("ref_allele", "S10", True, STR_DTYPE),
-    Field("alt_allele", "S10", True, STR_DTYPE),
-    Field("dbsnp_id", "S20", False, STR_DTYPE),
+    Field("chrom", "S10", True, None),
+    Field("start_pos", "i8", True, None),
+    Field("ref_allele", "S10", True, None),
+    Field("alt_allele", "S10", True, None),
+    Field("dbsnp_id", "S20", False, None),
     Field("strand", "S1", False, None),  # + or -
 )
 
+
 SNP_SCHEMA = Schema(
-    SNP_FIELDS,
+    fields=SNP_FIELDS,
     version=SCHEMA_VERSION,
     label_from=("chrom", "start_pos", "ref_allele", "alt_allele"),
     label_builder=build_variant_label,
     label_required=True,
     label_normalizer=None,
 )
-
-# lambda x: raise ValueError("strand must be either + or -") if x not in {"+", "-"}
 
 
 REGISTRY_SCHEMAS = {
@@ -208,15 +208,9 @@ REGISTRY_SCHEMAS = {
 }
 
 
-# annotation
-
-
-#    ("pipeline_version", "S20"),
-
-
 def validate_event(x):
     if x not in EVENTS:
-        raise ValueError(f"Event '{x}, not valid must be ones of {','.join(EVENTS)}")
+        raise ValueError(f"Event '{x}' not valid; must be one of {','.join(EVENTS)}")
 
 
 PROVENANCE_LOG = (
@@ -231,7 +225,9 @@ PROVENANCE_LOG = (
 )
 
 PROVENANCE_LOG_SCHEMA = Schema(
-    version=SCHEMA_VERSION, fields=PROVENANCE_LOG, label_required=False
+    fields=PROVENANCE_LOG,
+    version=SCHEMA_VERSION,
+    label_required=False,
 )
 
 PROVENANCE_SCHEMAS = {"log": PROVENANCE_LOG_SCHEMA}

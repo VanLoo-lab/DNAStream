@@ -55,14 +55,14 @@ To view the [documentation](#documentation) locally:
   - `mkdocstrings[python]>=0.25`
 
 ```bash
-pip install ".[docs]"
+pip install -e ".[docs]"
 ```
 
 To run the test suite:
   - `pytest>=7`
 
 ```bash
-pip install ".[test]"
+pip install -e ".[test]"
 ```
 
 For developers, all of the above dependencies plus:
@@ -80,7 +80,9 @@ Create a conda/mamba environment (recommended) and install the package from the 
 ```bash
 conda create -n dnastream python=3.11
 conda activate dnastream 
-pip install "git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
+pip install "dnastream @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
+# With optional docs dependencies
+pip install "dnastream[docs] @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
 ```
 
 
@@ -97,8 +99,12 @@ python -c "import dnastream; from dnastream import DNAStream; print('dnastream',
 The beta release is focused on **Registry** and **Provenance**. The minimal example below creates a file, appends rows to a registry, iterates decoded rows, and inspects recent provenance events.
 
 ```python
+from pathlib import Path
+import tempfile
 from dnastream import DNAStream
-myfile = "myfile.h5"
+
+tmpdir = Path(tempfile.mkdtemp(prefix="dnastream_tutorial_"))
+myfile = tmpdir / "temp.h5"
 
 #Create a new DNAStream HDF5 file, user warning if file already exists.
 DNAStream(myfile, mode="x").create()
@@ -169,7 +175,7 @@ During the beta phase, the documentation is not yet published on GitHub Pages. Y
 Install the optional documentation dependencies:
 
 ```bash
-pip install -e ".[docs]"
+pip install -e ".[docs]"  # after cloning the repository
 ```
 
 Then serve the documentation locally:

@@ -11,6 +11,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: installation.md
+  - Built-in Schemas: reference/schemas.md
   - Design: 
     - Charter: design/CHARTER.md
     - Model: design/MODEL.md
@@ -21,6 +22,7 @@ nav:
     - Quickstart: tutorials/00_quickstart.ipynb
     - DNAStream : tutorials/01_dnastream.ipynb
     - Registry: tutorials/02_registry.ipynb
+    - Provenance: tutorials/03_provenance.ipynb
   - API:
       - DNAStream: api/dnastream.md
       - Registry: api/registry.md
