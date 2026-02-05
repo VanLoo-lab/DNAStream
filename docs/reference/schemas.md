@@ -17,11 +17,13 @@ These tables are generated from the current `dnastream` code.
 | modified_at | object | True | None |
 | modified_by | object | True | None |
 | sample_name | object | True | str_validator |
+| tissue_type | object | False | str_validator |
 | organism | object | False | str_validator |
 | library_strategy | object | False | str_validator |
 | library_source | object | False | str_validator |
 | library_selection | object | False | str_validator |
 | library_layout | S10 | False | None |
+| read_length | <class 'numpy.int64'> | False | None |
 | platform | object | False | str_validator |
 | model | object | False | str_validator |
 | center_name | object | False | str_validator |
