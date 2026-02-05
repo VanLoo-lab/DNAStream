@@ -11,7 +11,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: installation.md
-  - Built-in Schemas: reference/schemas.md
+  
   # - Design: 
   #   - Charter: design/CHARTER.md
   #   - Model: design/MODEL.md
@@ -29,6 +29,7 @@ nav:
       - Provenance: api/provenance.md
       - IO: api/io.md
       - Schema: api/schema.md
+      - Built-in Schemas: reference/schemas.md
 
 
 
