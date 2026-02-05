@@ -13,7 +13,7 @@ for name, schema in REGISTRY_SCHEMAS.items():
 
 out.append("## Provenance\n")
 for name, schema in PROVENANCE_SCHEMAS.items():
-    out.append(f"### `provenance/{name}`\n")
+    out.append(f"### `{name}`\n")
     out.append(schema.to_markdown_table())
     out.append("")
 

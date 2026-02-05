@@ -84,7 +84,7 @@ These tables are generated from the current `dnastream` code.
 
 ## Provenance
 
-### `provenance/log`
+### `log`
 
 | name | dtype | required | validator |
 | --- | --- | --- | --- |
