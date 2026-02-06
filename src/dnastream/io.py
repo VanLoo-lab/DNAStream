@@ -15,13 +15,13 @@ connected :class:`~dnastream.dnastream.DNAStream` instance.
 """
 
 import csv
-import os
+import warnings
 from typing import Sequence, Mapping, Any, Optional, Literal
 import numpy as np
 from .registry import Registry
 from .constants import SCOPE, EVENTS
-from .utils import wrap_list, require_file_exists_static, _qualname
-from pathlib import Path
+from .utils import wrap_list, require_file_exists_static, _qualname, resolve_path, get_file_id
+
 
 
 _MAF_COLUMN_MAPPING = {
@@ -78,6 +78,7 @@ class IO:
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ) -> None:
@@ -109,6 +110,7 @@ class IO:
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
+            allow_duplicate_source_files=allow_duplicate_source_files,
             delimiter=delimiter,
             **kwargs,
         )
@@ -117,8 +119,10 @@ class IO:
             event=EVENTS.APPEND,
             dataset="",
             fn=_qualname(self.add_variants_from_maf),
-            fname=str(Path(fname).resolve()),
+            file_name=resolve_path(fname),
+            file_id = get_file_id(fname)
         )
+
 
     def add_samples_from_files(
         self,
@@ -127,6 +131,7 @@ class IO:
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = ",",
         **kwargs,
     ) -> None:
@@ -158,6 +163,7 @@ class IO:
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
+            allow_duplicate_source_files=allow_duplicate_source_files
             delimiter=delimiter,
             **kwargs,
         )
@@ -167,7 +173,8 @@ class IO:
             event=EVENTS.APPEND,
             dataset="",
             fn=_qualname(self.add_samples_from_files),
-            fname=str(Path(fname).resolve()),
+            file_name=resolve_path(fname),
+            file_id = get_file_id(fname)
         )
 
     def add_snps_from_maf(
@@ -177,6 +184,7 @@ class IO:
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ):
@@ -207,6 +215,7 @@ class IO:
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
+            allow_duplicate_source_files=allow_duplicate_source_files,
             delimiter=delimiter,
             **kwargs,
         )
@@ -215,8 +224,10 @@ class IO:
             event=EVENTS.APPEND,
             dataset="",
             fn=_qualname(self.add_snps_from_maf),
-            fname=str(Path(fname).resolve()),
+            file_name=resolve_path(fname),
+            file_id = get_file_id(fname)
         )
+ 
 
     @staticmethod
     def parse_csv(
@@ -272,6 +283,7 @@ class IO:
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ) -> None:
@@ -292,6 +304,7 @@ class IO:
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
+            allow_duplicate_source_files=allow_duplicate_source_files,
             delimiter=delimiter,
             **kwargs,
         )
@@ -371,15 +384,35 @@ class IO:
         column_mapping: Optional[Mapping[str, str]],
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ):
-
         fnames = wrap_list(fname)
-
         columns = registry.fields
 
         for path in fnames:
+            p = resolve_path(path)
+            file_id = get_file_id(path)
+
+            if not allow_duplicate_source_files:
+                if "source_file_id" not in columns:
+                    warnings.warn(
+                        f"'source_file_id' is not a field in Registry '{registry.name}', "
+                        "continuing without validating source files.",
+                        stacklevel=2,
+                    )
+                else:
+                    reg_df = registry.get(lambda x: x["source_file_id"] == file_id)
+                    if reg_df.shape[0] > 0:
+                        warnings.warn(
+                            f"Duplicate source_file_id '{file_id}' for file '{p}' is already present "
+                            f"in Registry '{registry.name}', skipping. "
+                            "Use allow_duplicate_source_files=True to override.",
+                            stacklevel=2,
+                        )
+                        continue
+
             rows = IO._parse_file(
                 path,
                 columns,
@@ -392,16 +425,9 @@ class IO:
             if not rows:
                 continue
 
-            p = Path(path).resolve()
-            try:
-                st = os.stat(p)
-                file_id = f"{st.st_size}:{int(st.st_mtime)}"
-            except Exception:
-                file_id = ""
-
             defaults = {
                 # Only registries that include these fields will use them.
-                "source_file": str(p),
+                "source_file": p,
                 "source_file_id": file_id,
             }
 

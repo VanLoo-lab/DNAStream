@@ -7,6 +7,7 @@ import numpy as np
 import uuid
 from typing import Callable, Any
 from importlib.metadata import version, PackageNotFoundError
+from pathlib import Path
 
 
 def wrap_list(val):
@@ -198,3 +199,17 @@ def package_version(pkg: str = "dnastream") -> str:
         return version(pkg)
     except PackageNotFoundError:
         return "0+unknown"
+
+
+def resolve_path(path: str) -> str:
+    return str(Path(path).resolve())
+
+
+def get_file_id(path: str) -> str:
+    p = Path(path).resolve()
+    try:
+        st = os.stat(p)
+        file_id = f"{st.st_size}:{int(st.st_mtime)}"
+    except Exception:
+        file_id = ""
+    return file_id
