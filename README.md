@@ -202,5 +202,5 @@ Open that address in your browser to view the docs.
 If the [optional dependences](#optional-dependencies) are installed for the test suite, then the package can be tested with:
 
 ```bash
-pyest
+pytest
 ```
