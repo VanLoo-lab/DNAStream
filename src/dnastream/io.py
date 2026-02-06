@@ -20,8 +20,13 @@ from typing import Sequence, Mapping, Any, Optional, Literal
 import numpy as np
 from .registry import Registry
 from .constants import SCOPE, EVENTS
-from .utils import wrap_list, require_file_exists_static, _qualname, resolve_path, get_file_id
-
+from .utils import (
+    wrap_list,
+    require_file_exists_static,
+    _qualname,
+    resolve_path,
+    get_file_id,
+)
 
 
 _MAF_COLUMN_MAPPING = {
@@ -120,9 +125,8 @@ class IO:
             dataset="",
             fn=_qualname(self.add_variants_from_maf),
             file_name=resolve_path(fname),
-            file_id = get_file_id(fname)
+            file_id=get_file_id(fname),
         )
-
 
     def add_samples_from_files(
         self,
@@ -163,7 +167,7 @@ class IO:
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
-            allow_duplicate_source_files=allow_duplicate_source_files
+            allow_duplicate_source_files=allow_duplicate_source_files,
             delimiter=delimiter,
             **kwargs,
         )
@@ -174,7 +178,7 @@ class IO:
             dataset="",
             fn=_qualname(self.add_samples_from_files),
             file_name=resolve_path(fname),
-            file_id = get_file_id(fname)
+            file_id=get_file_id(fname),
         )
 
     def add_snps_from_maf(
@@ -225,9 +229,8 @@ class IO:
             dataset="",
             fn=_qualname(self.add_snps_from_maf),
             file_name=resolve_path(fname),
-            file_id = get_file_id(fname)
+            file_id=get_file_id(fname),
         )
- 
 
     @staticmethod
     def parse_csv(
