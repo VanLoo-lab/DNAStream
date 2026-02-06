@@ -92,10 +92,10 @@ pip install "dnastream @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-
 Verify the installation. 
 
 ```
-python -c "import dnastream; from dnastream import DNAStream"
+python -c "import dnastream; from dnastream import DNAStream; print(dnastream.__version__)"
 ```
 
- Package is ready to use if no errors occurred!
+Package is ready to use if no errors occurred!
 
 
 ## Quickstart
