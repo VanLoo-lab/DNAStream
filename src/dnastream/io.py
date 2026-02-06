@@ -15,11 +15,13 @@ connected :class:`~dnastream.dnastream.DNAStream` instance.
 """
 
 import csv
+import os
 from typing import Sequence, Mapping, Any, Optional, Literal
 import numpy as np
 from .registry import Registry
 from .constants import SCOPE, EVENTS
 from .utils import wrap_list, require_file_exists_static, _qualname
+from pathlib import Path
 
 
 _MAF_COLUMN_MAPPING = {
@@ -115,7 +117,7 @@ class IO:
             event=EVENTS.APPEND,
             dataset="",
             fn=_qualname(self.add_variants_from_maf),
-            fname=fname,
+            fname=str(Path(fname).resolve()),
         )
 
     def add_samples_from_files(
@@ -165,7 +167,7 @@ class IO:
             event=EVENTS.APPEND,
             dataset="",
             fn=_qualname(self.add_samples_from_files),
-            fname=fname,
+            fname=str(Path(fname).resolve()),
         )
 
     def add_snps_from_maf(
@@ -213,7 +215,7 @@ class IO:
             event=EVENTS.APPEND,
             dataset="",
             fn=_qualname(self.add_snps_from_maf),
-            fname=fname,
+            fname=str(Path(fname).resolve()),
         )
 
     @staticmethod
@@ -377,23 +379,35 @@ class IO:
 
         columns = registry.fields
 
-        rows: list[dict[str, Any]] = []
         for path in fnames:
-
-            rows.extend(
-                IO._parse_file(
-                    path,
-                    columns,
-                    column_mapping=column_mapping,
-                    delimiter=delimiter,
-                    schema=getattr(registry, "schema", None),
-                    **kwargs,
-                )
+            rows = IO._parse_file(
+                path,
+                columns,
+                column_mapping=column_mapping,
+                delimiter=delimiter,
+                schema=getattr(registry, "schema", None),
+                **kwargs,
             )
 
-        if rows:
+            if not rows:
+                continue
+
+            p = Path(path).resolve()
+            try:
+                st = os.stat(p)
+                file_id = f"{st.st_size}:{int(st.st_mtime)}"
+            except Exception:
+                file_id = ""
+
+            defaults = {
+                # Only registries that include these fields will use them.
+                "source_file": str(p),
+                "source_file_id": file_id,
+            }
+
             registry.add(
                 rows,
                 activate_newest=activate_newest,
                 allow_duplicate_labels=allow_duplicate_labels,
+                defaults=defaults,
             )

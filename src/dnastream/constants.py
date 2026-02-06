@@ -4,8 +4,8 @@ import numpy as np
 import uuid
 from enum import Enum
 
-PACKAGE_VERSION: str = "0.1.0"
-SCHEMA_VERSION: str = "0.1.0"
+
+SCHEMA_VERSION: str = "0.1.1"
 
 
 # Provenance constants

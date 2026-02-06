@@ -87,6 +87,8 @@ SAMPLE_REGISTRY_FIELDS = REGISTRY_SPINE + (
     Field("batch_id", STR_DTYPE, False, str_validator),
     Field("reference_build", STR_DTYPE, False, str_validator),
     Field("date_of_sequencing", STR_DTYPE, False, str_validator),
+    Field("source_file", STR_DTYPE, False, str_validator),  # method/source
+    Field("source_file_id", STR_DTYPE, False, str_validator),
 )
 
 
@@ -150,7 +152,9 @@ VARIANT_REGISTRY_FIELDS = REGISTRY_SPINE + (
     Field("dbsnp_id", STR_DTYPE, False, str_validator),
     Field("filter", STR_DTYPE, False, str_validator),
     Field("info", STR_DTYPE, False, str_validator),
-    Field("source", STR_DTYPE, False, str_validator),  # method/source
+    Field("source_file", STR_DTYPE, False, str_validator),  # method/source
+    Field("source_file_id", STR_DTYPE, False, str_validator),
+    Field("caller", STR_DTYPE, False, str_validator),
 )
 
 

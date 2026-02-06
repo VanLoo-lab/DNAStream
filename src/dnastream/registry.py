@@ -214,7 +214,9 @@ class Registry(H5Dataset):
         self,
         rows: list[dict],
         activate_newest: bool = True,
-        allow_duplicate_labels=False,
+        allow_duplicate_labels: bool = False,
+        *,
+        defaults: dict[str, object] | None = None,
     ) -> None:
         """Append rows to the registry (append-only insert).
 
@@ -262,8 +264,6 @@ class Registry(H5Dataset):
         n0 = ds.shape[0]
         names = ds.dtype.names
 
-        n_add = len(rows)
-
         # Compute labels (or None) and find collisions against *active* existing rows
         if not self.schema.label_required:
             labels = None
@@ -277,11 +277,23 @@ class Registry(H5Dataset):
             collisions = self._detect_label_collisions(labels, active_only=True)
 
         if not allow_duplicate_labels:
-            duplicate_label_idx = [x for x, _ in collisions]
-            n_add = len(rows) - len(duplicate_label_idx)
+            duplicate_label_idx = {x for x, _ in collisions}
+            rows_to_add = [
+                r for i, r in enumerate(rows) if i not in duplicate_label_idx
+            ]
+            labels_to_add = (
+                None
+                if labels is None
+                else [
+                    lab for i, lab in enumerate(labels) if i not in duplicate_label_idx
+                ]
+            )
         else:
-            duplicate_label_idx = []
+            duplicate_label_idx = set()
+            rows_to_add = list(rows)
+            labels_to_add = labels
 
+        n_add = len(rows_to_add)
         if n_add == 0:
             return
 
@@ -309,15 +321,14 @@ class Registry(H5Dataset):
             else:
                 # as a last resort; but try to avoid leaving garbage
                 block[name] = None
-        # Defaults
 
         # Fill in registry spine iaw the registry contract
         block["id"] = [str(uuid.uuid4()) for _ in range(n_add)]
 
-        if labels is None:
+        if labels_to_add is None:
             block["label"] = ""
         else:
-            block["label"] = labels
+            block["label"] = as_str_vec(labels_to_add)
 
         block["active"] = True
         block["created_at"] = now
@@ -337,26 +348,34 @@ class Registry(H5Dataset):
                 block["active"][new_idxs] = False
 
         # Fill from input
-        for i, row in enumerate(rows):
-            # skip duplicates
-            if i in duplicate_label_idx:
-                continue
+        for i, row in enumerate(rows_to_add):
             for name in names:
                 if name in protected:
                     continue
 
+                value = None
                 if name in row and row[name] is not None:
-                    field = self.schema.field(name)
                     value = row[name]
-                    if field.validator is not None:
-                        field.validator(value)
+                elif (
+                    defaults is not None
+                    and name in defaults
+                    and defaults[name] is not None
+                ):
+                    value = defaults[name]
 
-                    if ds.dtype[name].kind in ("O", "U"):
-                        block[name][i] = str(value)
-                    elif ds.dtype[name].kind == "S":
-                        block[name][i] = str(value).encode("utf-8")
-                    else:
-                        block[name][i] = value
+                if value is None:
+                    continue
+
+                field = self.schema.field(name)
+                if field.validator is not None:
+                    field.validator(value)
+
+                if ds.dtype[name].kind in ("O", "U"):
+                    block[name][i] = str(value)
+                elif ds.dtype[name].kind == "S":
+                    block[name][i] = str(value).encode("utf-8")
+                else:
+                    block[name][i] = value
 
         ds.resize((n0 + n_add,))
         ds[n0 : n0 + n_add] = block
