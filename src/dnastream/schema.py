@@ -52,6 +52,7 @@ class Field:
     dtype: Any
     required: bool = True
     validator: Callable[[Any], None] | None = None  # raise on failure
+    modifiable: bool = False
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,9 @@ class Schema:
 
     def required_names(self) -> tuple[str, ...]:
         return tuple(f.name for f in self.fields if f.required)
+    
+    def modifiable_fields(self) -> tuple[str, ...]:
+        return tuple(f.name for f in self.fields if f.modifiable)
 
     # -----------------------------
     # Docs/helpers
@@ -152,8 +156,10 @@ class Schema:
                     "dtype": str(f.dtype),
                     "required": bool(f.required),
                     "validator": (
-                        getattr(v, "__name__", None) if v is not None else None
+                        getattr(v, "__name__", None) if v is not None else None,
+        
                     ),
+                    "modifiable": bool(f.modifiable)
                 }
             )
         return out

@@ -189,6 +189,10 @@ def decode_arr(x: Any, *, encoding: str = "utf-8") -> Any:
     if isinstance(x, np.ndarray) and getattr(x.dtype, "names", None) is not None:
         if x.shape == ():
             return _decode_scalar_row(x[()])
+        # IMPORTANT: preserve empty structured arrays so downstream code
+        # can still recover dtype.names / DataFrame column names.
+        if x.size == 0:
+            return x
         return [_decode_scalar_row(r) for r in x]
 
     return x

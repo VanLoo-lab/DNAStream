@@ -11,7 +11,7 @@ def str_validator(x):
 
 
 REGISTRY_SPINE = (
-    Field("id", STR_DTYPE, True, None),  # UUIDv4 string
+    Field("id", STR_DTYPE, True, None, False),  # UUIDv4 string
     Field("label", STR_DTYPE, True, None),  # user-facing unique key
     Field("idx", np.int64, True, None),
     Field("active", np.bool_, True, None),
@@ -65,30 +65,30 @@ date_of_sequencing : str
 
 
 SAMPLE_REGISTRY_FIELDS = REGISTRY_SPINE + (
-    Field("sample_name", STR_DTYPE, True, str_validator),
+    Field("sample_name", STR_DTYPE, True, str_validator, False),
     # optional metadata fields (required=False)
-    Field("tissue_type", STR_DTYPE, False, str_validator),
-    Field("organism", STR_DTYPE, False, str_validator),
-    Field("library_strategy", STR_DTYPE, False, str_validator),
-    Field("library_source", STR_DTYPE, False, str_validator),
-    Field("library_selection", STR_DTYPE, False, str_validator),
+    Field("tissue_type", STR_DTYPE, False, str_validator, True),
+    Field("organism", STR_DTYPE, False, str_validator, True),
+    Field("library_strategy", STR_DTYPE, False, str_validator, True),
+    Field("library_source", STR_DTYPE, False, str_validator, True),
+    Field("library_selection", STR_DTYPE, False, str_validator, True),
     # if you want fixed width here, keep it; otherwise use STR_DTYPE
-    Field("library_layout", "S10", False, None),
-    Field("read_length", "i4", False, None),
-    Field("platform", STR_DTYPE, False, str_validator),
-    Field("model", STR_DTYPE, False, str_validator),
-    Field("center_name", STR_DTYPE, False, str_validator),
-    Field("run", STR_DTYPE, False, str_validator),
-    Field("study", STR_DTYPE, False, str_validator),
-    Field("coverage", "f4", False, None),
-    Field("modality", STR_DTYPE, False, str_validator),
-    Field("location", STR_DTYPE, False, str_validator),
-    Field("bam_file_path", STR_DTYPE, False, str_validator),
-    Field("batch_id", STR_DTYPE, False, str_validator),
-    Field("reference_build", STR_DTYPE, False, str_validator),
-    Field("date_of_sequencing", STR_DTYPE, False, str_validator),
-    Field("source_file", STR_DTYPE, False, str_validator),  # method/source
-    Field("source_file_id", STR_DTYPE, False, str_validator),
+    Field("library_layout", "S10", False, None, True),
+    Field("read_length", "i4", False, None, True),
+    Field("platform", STR_DTYPE, False, str_validator, True),
+    Field("model", STR_DTYPE, False, str_validator, True),
+    Field("center_name", STR_DTYPE, False, str_validator, True),
+    Field("run", STR_DTYPE, False, str_validator, True),
+    Field("study", STR_DTYPE, False, str_validator, True),
+    Field("coverage", "f4", False, None, True),
+    Field("modality", STR_DTYPE, False, str_validator, True),
+    Field("location", STR_DTYPE, False, str_validator, True),
+    Field("bam_file_path", STR_DTYPE, False, str_validator, True),
+    Field("batch_id", STR_DTYPE, False, str_validator, True),
+    Field("reference_build", STR_DTYPE, False, str_validator, True),
+    Field("date_of_sequencing", STR_DTYPE, False, str_validator, True),
+    Field("source_file", STR_DTYPE, False, str_validator, False),  # method/source
+    Field("source_file_id", STR_DTYPE, False, str_validator, False),
 )
 
 
@@ -140,21 +140,21 @@ info : str
 
 
 VARIANT_REGISTRY_FIELDS = REGISTRY_SPINE + (
-    Field("chrom", STR_DTYPE, False, str_validator),
-    Field("start_pos", "i8", False, None),
-    Field("end_pos", "i8", False, None),
-    Field("ref_allele", STR_DTYPE, False, str_validator),
-    Field("alt_allele", STR_DTYPE, False, str_validator),
-    Field("hugo", STR_DTYPE, False, str_validator),
-    Field("entrez_gene_id", STR_DTYPE, False, str_validator),
-    Field("variant_classification", STR_DTYPE, False, str_validator),
-    Field("variant_type", STR_DTYPE, False, str_validator),
-    Field("dbsnp_id", STR_DTYPE, False, str_validator),
-    Field("filter", STR_DTYPE, False, str_validator),
-    Field("info", STR_DTYPE, False, str_validator),
-    Field("source_file", STR_DTYPE, False, str_validator),  # method/source
-    Field("source_file_id", STR_DTYPE, False, str_validator),
-    Field("caller", STR_DTYPE, False, str_validator),
+    Field("chrom", STR_DTYPE, False, str_validator, False),
+    Field("start_pos", "i8", False, None, False),
+    Field("end_pos", "i8", False, None, False),
+    Field("ref_allele", STR_DTYPE, False, str_validator, False),
+    Field("alt_allele", STR_DTYPE, False, str_validator, False),
+    Field("hugo", STR_DTYPE, False, str_validator, True),
+    Field("entrez_gene_id", STR_DTYPE, False, str_validator, True),
+    Field("variant_classification", STR_DTYPE, False, str_validator, True),
+    Field("variant_type", STR_DTYPE, False, str_validator, True),
+    Field("dbsnp_id", STR_DTYPE, False, str_validator, True),
+    Field("filter", STR_DTYPE, False, str_validator, True),
+    Field("info", STR_DTYPE, False, str_validator, True),
+    Field("source_file", STR_DTYPE, False, str_validator, False),  # method/source
+    Field("source_file_id", STR_DTYPE, False, str_validator, False),
+    Field("caller", STR_DTYPE, False, str_validator, True),
 )
 
 
@@ -220,14 +220,14 @@ def validate_event(x):
 
 
 PROVENANCE_LOG = (
-    Field("id", STR_DTYPE, True, None),
-    Field("timestamp", STR_DTYPE, True, None),  # ISO8601 Z
-    Field("user", STR_DTYPE, True, None),
-    Field("scope", STR_DTYPE, True, None),
-    Field("event", STR_DTYPE, True, validate_event),
-    Field("dataset", STR_DTYPE, True, None),  # full HDF5 path
-    Field("source", STR_DTYPE, False, None),  # module.qualname (optional)
-    Field("info", STR_DTYPE, False, None),  # JSON string (optional)
+    Field("id", STR_DTYPE, True, None, False),
+    Field("timestamp", STR_DTYPE, True, None, False),  # ISO8601 Z
+    Field("user", STR_DTYPE, True, None, False),
+    Field("scope", STR_DTYPE, True, None, False),
+    Field("event", STR_DTYPE, True, validate_event, False),
+    Field("dataset", STR_DTYPE, True, None, False),  # full HDF5 path
+    Field("source", STR_DTYPE, False, None, False),  # module.qualname (optional)
+    Field("info", STR_DTYPE, False, None, False),  # JSON string (optional)
 )
 
 PROVENANCE_LOG_SCHEMA = Schema(

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import numpy as np
 import h5py
 import warnings
-from ._h5base import H5Dataset
+from .table import Table
 from .utils import norm_key, as_str, as_str_vec, _qualname, decode_arr
 
 import pandas as pd
@@ -30,7 +30,7 @@ from .constants import (
 )
 
 
-class Registry(H5Dataset):
+class Registry(Table):
     """HDF5-backed append-only registry with active/inactive history.
 
     A `Registry` stores rows in an HDF5 compound dataset. Each row has a unique
@@ -85,75 +85,8 @@ class Registry(H5Dataset):
         self._label_to_idx = None
         self._id_to_idx = None
 
-    def __len__(self):
-        return self._ds().shape[0]
 
-    def __repr__(self) -> str:
-        n = "?"  # avoid disk access if dataset isn't available
-        try:
-            n = len(self)
-        except Exception:
-            pass
-        return f"Registry(name={self.name!r}, path={self.path!r}, " f"n={n})"
 
-    def __iter__(self):
-        for row in self._ds():
-            yield decode_arr(row)
-
-    def __contains__(self, item) -> bool:
-        """
-        Returns true if uuid id in registry
-
-        Notes
-        -----
-        This checks membership within the entire registy whether active/inactive
-        """
-        if item is None:
-            return False
-
-        is_scalar, items = self._validate_id_selector(item)
-        if not is_scalar:
-            raise ValueError(f"Item {item} must be a scalar value.")
-
-        item = norm_key(as_str(items[0]))
-
-        self._load_cache()
-        return item in self._id_to_idx
-
-    def __getitem__(self, item) -> dict[str, object]:
-        """Return a registry row (as a dict) by id.
-
-        Parameters
-        ----------
-        item
-            Registry id (UUID, str, or bytes). Must be a scalar.
-
-        Returns
-        -------
-        dict[str, object]
-            Mapping from field name to value. Byte fields are decoded as UTF-8 and
-            NumPy scalars are converted to Python scalars.
-
-        Raises
-        ------
-        KeyError
-            If the id is not present.
-        TypeError
-            If `item` is not a scalar id-like value.
-        """
-        if item is None:
-            raise KeyError("None is not a valid registry id.")
-
-        is_scalar, items = self._validate_id_selector(item)
-        if not is_scalar:
-            raise TypeError(
-                f"Registry id lookup expects a scalar; got {type(item).__name__}."
-            )
-
-        rid = norm_key(as_str(items[0]))
-
-        self._load_cache()
-        return decode_arr(self._row_by_id(rid))
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -172,13 +105,14 @@ class Registry(H5Dataset):
         **kwargs,
     ) -> h5py.Dataset:
         """Create a registry dataset and log"""
-        super().create(schema=schema, shape=(0,), **kwargs)
+        ds =super().create(schema=schema, **kwargs)
         self._emit(
             EVENTS.CREATE,
             fn=_qualname(self.create),
             schema_version=schema.version,
             schema_hash=schema.hash(),
         )
+        return ds
 
     def open(
         self,
@@ -682,10 +616,17 @@ class Registry(H5Dataset):
         """
         # Fast path: caller already sliced an array.
         if arr is not None:
+            # If empty, return an empty DataFrame with the correct columns.
+            if getattr(getattr(arr, "dtype", None), "names", None) is not None and arr.size == 0:
+                return pd.DataFrame(columns=list(arr.dtype.names or ()))
             return super().to_dataframe(arr)
 
         mode = self._validate_mode(mode)
         ds = self._ds()
+
+        # If the dataset is empty, return an empty DataFrame with the on-disk columns.
+        if ds.shape[0] == 0:
+            return pd.DataFrame(columns=list(ds.dtype.names or ()))
 
         if mode == "all":
             arr = ds[:]
@@ -695,15 +636,13 @@ class Registry(H5Dataset):
             idx = np.nonzero(mask)[0].astype(np.int64)
             arr = ds[idx] if idx.size else np.zeros((0,), dtype=ds.dtype)
 
+        # If the selector produced an empty slice, keep column names.
+        if getattr(getattr(arr, "dtype", None), "names", None) is not None and arr.size == 0:
+            return pd.DataFrame(columns=list(ds.dtype.names or ()))
+
         return super().to_dataframe(arr)
 
-    # def to_csv(self,
-    #     fname: str,
-    #     *,
-    #     mode: str = "all",
-    #     **kwargs):
-    #     df = self.to_dataframe(mode=mode, **kwargs)
-    #     df.to_csv(fname, **kwargs)
+
 
     def validate(self, *, strict: bool = True) -> None:
         """Validate registry invariants.

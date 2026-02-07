@@ -119,14 +119,14 @@ class IO:
             delimiter=delimiter,
             **kwargs,
         )
-        self.ds._record_event(
-            scope=SCOPE.IO,
-            event=EVENTS.APPEND,
-            dataset="",
-            fn=_qualname(self.add_variants_from_maf),
-            file_name=resolve_path(fname),
-            file_id=get_file_id(fname),
-        )
+        # self.ds._record_event(
+        #     scope=SCOPE.IO,
+        #     event=EVENTS.APPEND,
+        #     dataset="",
+        #     fn=_qualname(self.add_variants_from_maf),
+        #     file_name=resolve_path(fname),
+        #     file_id=get_file_id(fname),
+        # )
 
     def add_samples_from_files(
         self,
@@ -172,14 +172,7 @@ class IO:
             **kwargs,
         )
 
-        self.ds._record_event(
-            scope=SCOPE.IO,
-            event=EVENTS.APPEND,
-            dataset="",
-            fn=_qualname(self.add_samples_from_files),
-            file_name=resolve_path(fname),
-            file_id=get_file_id(fname),
-        )
+
 
     def add_snps_from_maf(
         self,
@@ -301,7 +294,7 @@ class IO:
         if column_mapping is None:
             column_mapping = _MAF_COLUMN_MAPPING
 
-        IO._add_files_to_registry(
+        self._add_files_to_registry(
             fname,
             registry,
             column_mapping=column_mapping,
@@ -380,8 +373,9 @@ class IO:
 
         return rows
 
-    @staticmethod
+
     def _add_files_to_registry(
+        self,
         fname: Sequence[str] | str,
         registry: Registry,
         column_mapping: Optional[Mapping[str, str]],
@@ -397,6 +391,8 @@ class IO:
         for path in fnames:
             p = resolve_path(path)
             file_id = get_file_id(path)
+
+          
 
             if not allow_duplicate_source_files:
                 if "source_file_id" not in columns:
@@ -439,4 +435,13 @@ class IO:
                 activate_newest=activate_newest,
                 allow_duplicate_labels=allow_duplicate_labels,
                 defaults=defaults,
+            )
+
+            self.ds._record_event(
+                scope=SCOPE.IO,
+                event=EVENTS.APPEND,
+                dataset="",
+                fn=_qualname(self._add_files_to_registry),
+                file_name=p,
+                file_id=get_file_id(path),
             )

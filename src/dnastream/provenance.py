@@ -7,12 +7,12 @@ from typing import Any, Iterable
 from .schema import Schema
 import h5py
 import numpy as np
-from ._h5base import H5Dataset
+from .table import Table
 from .constants import EVENTS, Event, Scope
-from .utils import decode_arr
 
 
-class Provenance(H5Dataset):
+
+class Provenance(Table):
     """HDF5-backed append-only provenance log.
 
     A `Provenance` stores rows in an HDF5 compound dataset. Each row has a unique
@@ -30,37 +30,8 @@ class Provenance(H5Dataset):
             raise ValueError("Logs must live within the provenance group.")
         super().__init__(parent, name)
 
-    def __len__(self) -> int:
-        return self._ds().shape[0]
 
-    def __repr__(self) -> str:
-        n = "?"  # avoid disk access if dataset isn't available
-        try:
-            n = len(self)
-        except Exception:
-            pass
-        return f"Provenance(name={self.name!r}, path={self.path!r}, n={n})"
 
-    def __iter__(self) -> Iterable[np.void]:
-        for row in self._ds():
-            yield decode_arr(row)
-
-    def create(
-        self,
-        schema: Schema,
-        **kwargs,
-    ) -> h5py.Dataset:
-        """Create a Provenance dataset.
-
-        schema : Schema
-            The schema for the Provenance object to be created
-
-        Notes
-        -----
-        Forces provenance logs to be 1-d datasets.
-
-        """
-        super().create(schema=schema, shape=(0,), **kwargs)
 
     def add(
         self,
@@ -143,28 +114,7 @@ class Provenance(H5Dataset):
 
         This stays lightweight by design.
         """
-        if not self.exists():
-            if strict:
-                raise RuntimeError(f"Dataset does not exist at {self.path}")
-            return
-
-        ds = self._ds()
-        if ds.ndim != 1:
-            raise ValueError(f"Provenance dataset must be 1D; found ndim={ds.ndim}")
-        if (
-            ds.maxshape is not None
-            and ds.maxshape[0] is not None
-            and ds.maxshape[0] < ds.shape[0]
-        ):
-            raise ValueError(
-                "Provenance dataset maxshape is inconsistent with current shape"
-            )
-
-        # Not strictly required, but provenance should almost always be a compound dtype.
-        if ds.dtype.names is None:
-            msg = f"Provenance dataset dtype is not compound at {self.path}"
-            if strict:
-                raise ValueError(msg)
+        super().validate()
 
     def register_hook(self, *args, **kwargs):
         """Not supported for Provenance objects.
