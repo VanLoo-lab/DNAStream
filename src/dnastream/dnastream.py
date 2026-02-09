@@ -130,7 +130,7 @@ class DNAStream:
         self._register_hooks()
 
     @classmethod
-    def create(cls, path: str, *, patient_id: str = "", verbose: bool = False):
+    def create(cls, path: str, *, patient_id: str | None = None, verbose: bool = False):
         """Create and initialize a new DNAStream HDF5 file.
 
         path : str
@@ -335,7 +335,7 @@ class DNAStream:
 
             self._registries[key] = reg
 
-    def _initialize_new_file(self, patient_id="") -> None:
+    def _initialize_new_file(self, patient_id: str | None = None) -> None:
         """Initialize the DNAStream layout on an already-open, empty HDF5 handle."""
         # Safety: only initialize empty files/handles
 
@@ -361,7 +361,10 @@ class DNAStream:
         # )
 
         # Domain
-        self.handle.attrs["patient_id"] = patient_id
+        if patient_id is None:
+            self.handle.attrs["patient_id"] = ""
+        else:
+            self.handle.attrs["patient_id"] = patient_id
 
         # Reserved top-level groups
         for grp in (

@@ -44,3 +44,6 @@ Repository = "https://github.com/VanLoo-lab/DNAStream"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.scripts]
+dnastream = "dnastream.cli.main:main"
