@@ -85,9 +85,6 @@ class Registry(Table):
         self._label_to_idx = None
         self._id_to_idx = None
 
-
-
-
     @property
     def columns(self) -> tuple[str, ...]:
         ds = self.open()
@@ -105,7 +102,7 @@ class Registry(Table):
         **kwargs,
     ) -> h5py.Dataset:
         """Create a registry dataset and log"""
-        ds =super().create(schema=schema, **kwargs)
+        ds = super().create(schema=schema, **kwargs)
         self._emit(
             EVENTS.CREATE,
             fn=_qualname(self.create),
@@ -317,6 +314,186 @@ class Registry(Table):
         self._invalidate_cache()
         self._emit(EVENTS.APPEND, _qualname(self.add), n_add=n_add)
 
+    def _get_primitive(
+        self,
+        mode: Literal["active_only", "all", "non_active"] = "all",
+        by: Literal["id", "label"] = "id",
+    ) -> np.ndarray:
+        """Get registry primitives "id" or "label" by mode and identifier.
+
+        mode : str, optional
+            The subset of primitives to return
+
+        by : str, optional
+            Which field to return
+
+        Returns
+        -------
+        np.ndarray
+            a 1-d array of strings
+        """
+        mode = self._validate_mode(mode)
+
+        by = self._validate_by(by)
+
+        ds = self._ds()
+        primitive = as_str_vec(ds[by][:])
+
+        if primitive.size == 0:
+            return primitive
+
+        if mode == "all":
+            return primitive
+
+        active = ds["active"][:].astype(bool)
+        if mode == "active_only":
+            return primitive[active]
+        # non-active
+        return primitive[~active]
+
+    def ids(
+        self, *, mode: Literal["active_only", "all", "non_active"] = "all"
+    ) -> np.ndarray:
+        """Get ids filtered by registry mode.
+
+        mode : str, optional
+            The subset of primitives to return
+
+
+        Returns
+        -------
+        np.ndarray
+            a 1-d array of ids
+        """
+        return self._get_primitive(mode=mode, by="id")
+
+    def labels(
+        self, *, mode: Literal["active_only", "all", "non_active"] = "all"
+    ) -> np.ndarray:
+        """Get labels filtered by registry mode.
+
+        mode : str, optional
+            The subset of primitives to return
+
+
+        Returns
+        -------
+        np.ndarray
+            a 1-d array of ids
+        """
+        return self._get_primitive(mode=mode, by="label")
+
+    def has_ids(
+        self,
+        ids,
+        *,
+        mode: Literal["active_only", "all", "non_active"] = "all",
+    ) -> bool | np.ndarray:
+        """Check whether one or more ids are present in the registry.
+
+        Parameters
+        ----------
+        ids
+            A single id or an iterable of ids.
+        mode : {"active_only", "all", "non_active"}
+            Which registry view to consider.
+
+        Returns
+        -------
+        bool or numpy.ndarray
+            If `ids` is scalar, returns a bool. Otherwise returns a 1D boolean array
+            aligned to the input order.
+        """
+        is_scalar, sel = self._validate_id_selector(ids)
+        mode = self._validate_mode(mode)
+
+        # Fast path: membership via cache (avoids building a large `present_ids` array)
+        self._load_cache()
+        ds = self._ds()
+
+        out = np.zeros(len(sel), dtype=bool)
+        for i, rid in enumerate(sel):
+            key = norm_key(as_str(rid))
+            idx = self._id_to_idx.get(key)
+            if idx is None:
+                continue
+            if mode == "all":
+                out[i] = True
+                continue
+            # mode-specific: check active flag for this row
+            is_active = bool(ds["active"][int(idx)])
+            out[i] = is_active if mode == "active_only" else (not is_active)
+
+        return bool(out[0]) if is_scalar else out
+
+    def eligible_ids(
+        self,
+        scope: Mapping[str, object] | None = None,
+        *,
+        mode: Literal["active_only", "all", "non_active"] = "active_only",
+        strict: bool = True,
+    ) -> np.ndarray:
+        """Return ids eligible under a scope filter.
+
+        Parameters
+        ----------
+        scope : Mapping[str, object] or None
+            Registry field/value constraints combined with AND logic.
+            Example: {"modality": "LCM"}.
+        mode : {"active_only", "all", "non_active"}
+            Which registry view to consider.
+        strict : bool
+            If True, raise when `scope` references unknown fields. If False, unknown
+            fields are ignored.
+
+        Returns
+        -------
+        numpy.ndarray
+            1D array of ids.
+        """
+        mode = self._validate_mode(mode)
+        ds = self._ds()
+
+        # Fast empty-registry path
+        if ds.shape[0] == 0:
+            return np.empty((0,), dtype=np.str_)
+
+        names = set(ds.dtype.names or ())
+
+        # Start with an all-True mask, then AND constraints onto it.
+        mask = np.ones(ds.shape[0], dtype=bool)
+
+        if scope:
+            for key, val in scope.items():
+                if key not in names:
+                    if strict:
+                        raise ValueError(
+                            f"Scope field {key!r} not found in Registry '{self.name}'."
+                        )
+                    else:
+                        warnings.warn(
+                            f"Scope field {key!r} not found in Registry '{self.name}'.",
+                            stacklevel=2,
+                        )
+                    continue
+
+                col = ds[key][:]
+
+                # Normalize common string-like storage (bytes/unicode/object) to str
+                kind = ds.dtype[key].kind
+                if kind in ("S", "O", "U"):
+                    col_s = as_str_vec(col)
+                    mask &= col_s == str(val)
+                else:
+                    mask &= col == val
+
+        if mode != "all":
+            active = ds["active"][:].astype(bool)
+            mask &= active if mode == "active_only" else ~active
+
+        ids = as_str_vec(ds["id"][:])
+        return ids[mask]
+
     def update(self, rows: list[dict], *, warn_missing=True) -> None:
         """Update the metadata of existing registered entities.
 
@@ -383,7 +560,9 @@ class Registry(Table):
                     continue
                 if key in non_editable:
                     warnings.warn(
-                        f"Field {key} is non-editable, metadata for {rid!r} and {key} not modified."
+                        f"Field {key} is non-editable, metadata for {rid!r} and {key} not modified.",
+                        stacklevel=2,
+                        category=UserWarning,
                     )
                     continue
                 if key not in names:
@@ -617,7 +796,10 @@ class Registry(Table):
         # Fast path: caller already sliced an array.
         if arr is not None:
             # If empty, return an empty DataFrame with the correct columns.
-            if getattr(getattr(arr, "dtype", None), "names", None) is not None and arr.size == 0:
+            if (
+                getattr(getattr(arr, "dtype", None), "names", None) is not None
+                and arr.size == 0
+            ):
                 return pd.DataFrame(columns=list(arr.dtype.names or ()))
             return super().to_dataframe(arr)
 
@@ -637,12 +819,13 @@ class Registry(Table):
             arr = ds[idx] if idx.size else np.zeros((0,), dtype=ds.dtype)
 
         # If the selector produced an empty slice, keep column names.
-        if getattr(getattr(arr, "dtype", None), "names", None) is not None and arr.size == 0:
+        if (
+            getattr(getattr(arr, "dtype", None), "names", None) is not None
+            and arr.size == 0
+        ):
             return pd.DataFrame(columns=list(ds.dtype.names or ()))
 
         return super().to_dataframe(arr)
-
-
 
     def validate(self, *, strict: bool = True) -> None:
         """Validate registry invariants.
