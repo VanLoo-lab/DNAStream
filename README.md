@@ -78,6 +78,7 @@ pip install -e ".[dev]"
 Create a conda/mamba environment (recommended) and install the package from the Github tagged release. 
 
 ```bash
+#optional but recommended
 conda create -n dnastream python=3.11
 conda activate dnastream 
 
@@ -87,6 +88,7 @@ pip install "dnastream @ git+https://github.com/VanLoo-lab/DNAStream.git"
 
 ### With local documentation and tutorials
 ```
+#optional but recommended
 conda create -n dnastream python=3.11
 conda activate dnastream 
 
