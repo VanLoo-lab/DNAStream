@@ -185,7 +185,24 @@ with DNAStream.open(myfile, mode="r", verbose=False) as ds:
       print(event)
 ```
 
+## CLI Tools
 
+```bash
+dnastream -h            
+usage: dnastream create [-h] -f FILE [-p PATIENT_ID] [-v]
+
+options:
+  -h, --help            show this help message and exit
+  -f FILE, --file FILE  Path to the DNAStream file to be created.
+  -p PATIENT_ID, --patient-id PATIENT_ID
+                        Patient identifier to store in file (optional).
+  -v, --verbose
+```
+
+### Example
+```bash
+dnastream create -f dnastream.h5 -p patientX -v
+```
 
 ## Documentation
 
