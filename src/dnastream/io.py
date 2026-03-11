@@ -15,11 +15,18 @@ connected :class:`~dnastream.dnastream.DNAStream` instance.
 """
 
 import csv
+import warnings
 from typing import Sequence, Mapping, Any, Optional, Literal
 import numpy as np
 from .registry import Registry
 from .constants import SCOPE, EVENTS
-from .utils import wrap_list, require_file_exists_static, _qualname
+from .utils import (
+    wrap_list,
+    require_file_exists_static,
+    _qualname,
+    resolve_path,
+    get_file_id,
+)
 
 
 _MAF_COLUMN_MAPPING = {
@@ -76,6 +83,7 @@ class IO:
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ) -> None:
@@ -107,16 +115,18 @@ class IO:
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
+            allow_duplicate_source_files=allow_duplicate_source_files,
             delimiter=delimiter,
             **kwargs,
         )
-        self.ds._record_event(
-            scope=SCOPE.IO,
-            event=EVENTS.APPEND,
-            dataset="",
-            fn=_qualname(self.add_variants_from_maf),
-            fname=fname,
-        )
+        # self.ds._record_event(
+        #     scope=SCOPE.IO,
+        #     event=EVENTS.APPEND,
+        #     dataset="",
+        #     fn=_qualname(self.add_variants_from_maf),
+        #     file_name=resolve_path(fname),
+        #     file_id=get_file_id(fname),
+        # )
 
     def add_samples_from_files(
         self,
@@ -125,6 +135,7 @@ class IO:
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = ",",
         **kwargs,
     ) -> None:
@@ -156,17 +167,12 @@ class IO:
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
+            allow_duplicate_source_files=allow_duplicate_source_files,
             delimiter=delimiter,
             **kwargs,
         )
 
-        self.ds._record_event(
-            scope=SCOPE.IO,
-            event=EVENTS.APPEND,
-            dataset="",
-            fn=_qualname(self.add_samples_from_files),
-            fname=fname,
-        )
+
 
     def add_snps_from_maf(
         self,
@@ -175,6 +181,7 @@ class IO:
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ):
@@ -205,6 +212,7 @@ class IO:
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
+            allow_duplicate_source_files=allow_duplicate_source_files,
             delimiter=delimiter,
             **kwargs,
         )
@@ -213,7 +221,8 @@ class IO:
             event=EVENTS.APPEND,
             dataset="",
             fn=_qualname(self.add_snps_from_maf),
-            fname=fname,
+            file_name=resolve_path(fname),
+            file_id=get_file_id(fname),
         )
 
     @staticmethod
@@ -270,6 +279,7 @@ class IO:
         column_mapping: Optional[Mapping[str, str]] = None,
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ) -> None:
@@ -284,12 +294,13 @@ class IO:
         if column_mapping is None:
             column_mapping = _MAF_COLUMN_MAPPING
 
-        IO._add_files_to_registry(
+        self._add_files_to_registry(
             fname,
             registry,
             column_mapping=column_mapping,
             activate_newest=activate_newest,
             allow_duplicate_labels=allow_duplicate_labels,
+            allow_duplicate_source_files=allow_duplicate_source_files,
             delimiter=delimiter,
             **kwargs,
         )
@@ -362,38 +373,75 @@ class IO:
 
         return rows
 
-    @staticmethod
+
     def _add_files_to_registry(
+        self,
         fname: Sequence[str] | str,
         registry: Registry,
         column_mapping: Optional[Mapping[str, str]],
         activate_newest: bool = True,
         allow_duplicate_labels: bool = False,
+        allow_duplicate_source_files: bool = False,
         delimiter: str = "\t",
         **kwargs,
     ):
-
         fnames = wrap_list(fname)
-
         columns = registry.fields
 
-        rows: list[dict[str, Any]] = []
         for path in fnames:
+            p = resolve_path(path)
+            file_id = get_file_id(path)
 
-            rows.extend(
-                IO._parse_file(
-                    path,
-                    columns,
-                    column_mapping=column_mapping,
-                    delimiter=delimiter,
-                    schema=getattr(registry, "schema", None),
-                    **kwargs,
-                )
+          
+
+            if not allow_duplicate_source_files:
+                if "source_file_id" not in columns:
+                    warnings.warn(
+                        f"'source_file_id' is not a field in Registry '{registry.name}', "
+                        "continuing without validating source files.",
+                        stacklevel=2,
+                    )
+                else:
+                    reg_df = registry.get(lambda x: x["source_file_id"] == file_id)
+                    if reg_df.shape[0] > 0:
+                        warnings.warn(
+                            f"Duplicate source_file_id '{file_id}' for file '{p}' is already present "
+                            f"in Registry '{registry.name}', skipping. "
+                            "Use allow_duplicate_source_files=True to override.",
+                            stacklevel=2,
+                        )
+                        continue
+
+            rows = IO._parse_file(
+                path,
+                columns,
+                column_mapping=column_mapping,
+                delimiter=delimiter,
+                schema=getattr(registry, "schema", None),
+                **kwargs,
             )
 
-        if rows:
+            if not rows:
+                continue
+
+            defaults = {
+                # Only registries that include these fields will use them.
+                "source_file": p,
+                "source_file_id": file_id,
+            }
+
             registry.add(
                 rows,
                 activate_newest=activate_newest,
                 allow_duplicate_labels=allow_duplicate_labels,
+                defaults=defaults,
+            )
+
+            self.ds._record_event(
+                scope=SCOPE.IO,
+                event=EVENTS.APPEND,
+                dataset="",
+                fn=_qualname(self._add_files_to_registry),
+                file_name=p,
+                file_id=get_file_id(path),
             )

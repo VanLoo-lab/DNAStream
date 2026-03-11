@@ -2,6 +2,7 @@ import pytest
 from dnastream.io import IO
 import pandas as pd
 
+#TODO: Add a test to ensure allow_duplicate_source_files issues a warning
 
 def test_init_io_object(dnastream_obj):
     myio = IO(dnastream_obj)
@@ -16,10 +17,10 @@ def test_add_variants_from_maf(dnastream_obj, temp_maf):
     dnastream_obj.io.add_variants_from_maf(temp_maf)
     assert len(dnastream_obj.variant) == 2
 
-    dnastream_obj.io.add_variants_from_maf([temp_maf], allow_duplicate_labels=True)
+    dnastream_obj.io.add_variants_from_maf([temp_maf], allow_duplicate_labels=True,allow_duplicate_source_files=True)
     assert len(dnastream_obj.variant) == 4
 
-    dnastream_obj.io.add_variants_from_maf([temp_maf], allow_duplicate_labels=False)
+    dnastream_obj.io.add_variants_from_maf([temp_maf], allow_duplicate_labels=False, allow_duplicate_source_files=True)
     assert len(dnastream_obj.variant) == 4
 
 
@@ -29,12 +30,12 @@ def test_add_samples_from_csv(dnastream_obj, temp_sample_csv):
     assert len(dnastream_obj.sample) == 2
 
     dnastream_obj.io.add_samples_from_files(
-        [temp_sample_csv], allow_duplicate_labels=True
+        [temp_sample_csv], allow_duplicate_labels=True, allow_duplicate_source_files=True
     )
     assert len(dnastream_obj.sample) == 4
 
     dnastream_obj.io.add_samples_from_files(
-        [temp_sample_csv], allow_duplicate_labels=False
+        [temp_sample_csv], allow_duplicate_labels=False, allow_duplicate_source_files=True
     )
     assert len(dnastream_obj.sample) == 4
 
@@ -52,6 +53,8 @@ def test_add_empty_file(dnastream_obj, temp_csv_file):
         dnastream_obj.io.add_samples_from_files(temp_csv_file)
         pd.DataFrame().to_csv(temp_csv_file, header=False, index=False)
         dnastream_obj.io.add_samples_from_files(temp_csv_file)
+
+
 
 
 # def test_add_pyclone(dnastream_obj, pyclone_file):

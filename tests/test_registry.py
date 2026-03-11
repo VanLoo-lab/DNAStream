@@ -518,3 +518,88 @@ def test_add_duplicate_labels_false(registry_obj, temp_data_rows):
         temp_data_rows, activate_newest=False, allow_duplicate_labels=False
     )
     assert len(registry_obj) == len(temp_data_rows)
+
+
+def test_id_function(registry_obj, temp_data_rows):
+    registry_obj.add(temp_data_rows, activate_newest=True)
+    assert len(registry_obj) == len(temp_data_rows)
+
+    all_ids = registry_obj.ids(mode="all")
+    active_ids = registry_obj.ids(mode="active_only")
+    assert set(all_ids) == set(active_ids)
+
+    non_active_ids = registry_obj.ids(mode="non_active")
+    assert non_active_ids.size == 0
+
+    registry_obj.add(temp_data_rows, allow_duplicate_labels=True)
+    all_ids = registry_obj.ids(mode="all")
+    active_ids = registry_obj.ids(mode="active_only")
+    assert set(all_ids) != set(active_ids)
+
+
+def test_label_function(registry_obj, temp_data_rows):
+    registry_obj.add(temp_data_rows, activate_newest=True)
+    assert len(registry_obj) == len(temp_data_rows)
+
+    all_labels = registry_obj.labels(mode="all")
+    active_labels = registry_obj.labels(mode="active_only")
+    assert set(all_labels) == set(active_labels)
+
+    registry_obj.add(temp_data_rows, allow_duplicate_labels=True)
+    all_labels = registry_obj.labels(mode="all")
+    active_labels = registry_obj.labels(mode="active_only")
+    non_active_labels = registry_obj.labels(mode="non_active")
+    assert non_active_labels.size == len(temp_data_rows)
+    assert set(all_labels) == set(active_labels)
+
+
+def test_has_ids(registry_obj, temp_data_rows):
+    registry_obj.add(temp_data_rows, activate_newest=True)
+    assert len(registry_obj) == len(temp_data_rows)
+
+    ids = registry_obj.ids(mode="all")
+
+    ids_present = registry_obj.has_ids(ids, mode="all")
+    assert np.all(ids_present)
+
+    has_nonactive_ids = registry_obj.has_ids(ids, mode="non_active")
+    assert ~np.all(has_nonactive_ids)
+
+    registry_obj.add(temp_data_rows, allow_duplicate_labels=True)
+    assert len(registry_obj) > len(temp_data_rows)
+    has_active_ids = registry_obj.has_ids(ids, mode="active_only")
+    assert ~np.all(has_active_ids)
+
+    test_id = uuid.uuid4()
+    assert not registry_obj.has_ids(test_id, mode="all")
+
+
+def test_elgible_ids(registry_obj, temp_data_rows):
+    registry_obj.add(temp_data_rows, activate_newest=True)
+    assert len(registry_obj) == len(temp_data_rows)
+
+    ids = registry_obj.eligible_ids(scope={"value": 0})
+    assert len(ids) == 1
+
+    ids = registry_obj.eligible_ids(scope={"variable": "var1"})
+    assert len(ids) == 1
+
+    with pytest.raises(ValueError):
+        registry_obj.eligible_ids(scope={"foo": "bar"}, strict=True)
+
+    with pytest.warns(UserWarning, match="not found"):
+        registry_obj.eligible_ids(scope={"foo": "bar"}, strict=False)
+
+    # ids_present = registry_obj.has_ids(ids, mode="all")
+    # assert np.all(ids_present)
+
+    # has_nonactive_ids = registry_obj.has_ids(ids, mode="non_active")
+    # assert ~np.all(has_nonactive_ids)
+
+    # registry_obj.add(temp_data_rows,allow_duplicate_labels=True)
+    # assert len(registry_obj) > len(temp_data_rows)
+    # has_active_ids = registry_obj.has_ids(ids, mode="active_only")
+    # assert ~np.all(has_active_ids)
+
+    # test_id = uuid.uuid4()
+    # assert not registry_obj.has_ids(test_id, mode="all")
