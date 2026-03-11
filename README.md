@@ -188,7 +188,7 @@ with DNAStream.open(myfile, mode="r", verbose=False) as ds:
 ## CLI Tools
 
 ```bash
-dnastream -h            
+dnastream create -h            
 usage: dnastream create [-h] -f FILE [-p PATIENT_ID] [-v]
 
 options:
