@@ -82,10 +82,10 @@ conda create -n dnastream python=3.11
 conda activate dnastream 
 
 # With optional docs dependencies (reccommended)
-pip install "dnastream[docs] @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
+pip install "dnastream[docs] @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.1-beta"
 
 #Just the DNAStream package
-pip install "dnastream @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.0-beta"
+pip install "dnastream @ git+https://github.com/VanLoo-lab/DNAStream.git@v0.1.1-beta"
 ```
 
 
