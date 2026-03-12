@@ -23,6 +23,7 @@ nav:
     - DNAStream : tutorials/01_dnastream.ipynb
     - Registry: tutorials/02_registry.ipynb
     - Provenance: tutorials/03_provenance.ipynb
+    - Full tutorial: tutorials/tutorial.ipynb
   - API:
       - DNAStream: api/dnastream.md
       - Registry: api/registry.md
